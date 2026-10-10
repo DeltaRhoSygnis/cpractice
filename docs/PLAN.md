@@ -165,8 +165,22 @@ attempts, and hidden-data separation.
 
 ## Progress tracker
 
-- [ ] M1 — Local application foundation
+- [x] M1 — Local application foundation
 - [ ] M2 — Deterministic grading engine
 - [ ] M3 — Problem package contract
 - [ ] M4 — AI problem generation
 - [ ] M5 — Learning feedback
+
+### M1 delivered
+
+| File | Purpose |
+|---|---|
+| `app/config.py` | pydantic-settings config; localhost-only defaults; secret presence only |
+| `app/main.py` | app factory + lifespan (creates runtime dirs) |
+| `app/api/health.py` | `GET /api/health` with capability reporting |
+| `web/index.html`, `web/styles.css`, `web/app.js` | zero-dependency status shell |
+| `tests/test_config.py`, `tests/test_health_api.py` | foundation tests |
+
+**M1 done-when:** the application starts locally and the browser can reach the
+backend — covered by `test_static_frontend_is_served` and
+`test_health_reports_ok`.
