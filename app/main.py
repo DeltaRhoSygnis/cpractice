@@ -19,10 +19,12 @@ from app.ai.cache import GenerationCache
 from app.ai.google import GoogleProvider
 from app.ai.kenari import KenariProvider
 from app.ai.rate_limits import RetryPolicy
-from app.api import generation, health, problems
+from app.api import generation, health, problems, submissions
 from app.config import Settings, get_settings
+from app.feedback.hint_service import HintService
 from app.generation.pipeline import GenerationPipeline
 from app.services.problem_service import ProblemService
+from app.services.submission_service import SubmissionService
 from app.storage.problem_repository import ProblemRepository
 
 logger = logging.getLogger("cpractice")
@@ -80,6 +82,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     _ensure_directories(settings)
     app.state.generation_pipeline = _build_generation_pipeline(settings)
+    # Reuse the pipeline's provider for hint generation; stored hints work
+    # regardless, so this stays optional.
+    provider = app.state.generation_pipeline.provider if app.state.generation_pipeline else None
+    app.state.hint_service = HintService(provider)
     logger.info(
         "CPractice %s started (provider=%s, compiler=%s, ai=%s)",
         settings.app_version,
@@ -106,11 +112,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.problem_service = ProblemService(ProblemRepository(settings.problems_path))
+    app.state.submission_service = SubmissionService()
 
     # --- API routes ---
     app.include_router(health.router, prefix="/api")
     app.include_router(problems.router, prefix="/api")
     app.include_router(generation.router, prefix="/api")
+    app.include_router(submissions.router, prefix="/api")
 
     # --- Static frontend ---
     # Mounted last so it never shadows /api routes.

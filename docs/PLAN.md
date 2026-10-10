@@ -190,7 +190,7 @@ attempts, and hidden-data separation.
 - [x] M2 — Deterministic grading engine
 - [x] M3 — Problem package contract
 - [x] M4 — AI problem generation
-- [ ] M5 — Learning feedback
+- [x] M5 — Learning feedback
 
 ### M1 delivered
 
@@ -318,6 +318,42 @@ Normalisation performs only lossless mapping: it never invents test data, and a
 payload with no usable tests is still rejected. Everything is re-validated
 against the Pydantic schemas afterwards, so the gate - not the model - still
 decides validity.
+
+### M5 delivered
+
+| File | Purpose |
+|---|---|
+| `app/feedback/reporter.py` | client-safe payloads + failure summaries; hidden data never included |
+| `app/feedback/hint_service.py` | progressive ladder, one level at a time; explicit solution reveal |
+| `app/services/submission_service.py` | grading + reporting; submission size limit |
+| `app/api/submissions.py` | `submit`, `hint`, `solution` endpoints |
+
+**M5 done-when:** a learner can attempt, inspect results, request guidance, and
+retry without starting a new AI conversation - verified live (below).
+
+#### Live learning loop
+
+```
+submit starter      -> verdict all_failed, 0/6, next_action request_hint
+hint (used 0)       -> L1 stored, next=2
+hint (used 1)       -> L2 stored, next=3
+hint (used 2)       -> L3 stored, next=4
+hint (level 5)      -> is_solution_reveal = true
+solution {}         -> HTTP 400 (must confirm)
+solution {confirm}  -> HTTP 200, reference returned
+submit correct code -> verdict passed, 6/6, next_action done
+```
+
+#### Feedback rules enforced
+
+* Hints advance **one level at a time**; requesting an exhausted ladder is 409.
+* Level 5 is the solution reveal and is flagged as such.
+* Solution text is revealed only with `confirm=true`; it is never part of the
+  normal problem view.
+* Hidden tests expose **no** `detail` field in the submission payload, and their
+  inputs never appear in any response.
+* Stored hints serve offline: the ladder works with **no AI provider configured**.
+* Facts come from the checker; guidance is attributed separately as a hint.
 
 **M4 done-when:** a generated exercise is rejected if malformed or
 inconsistent, and a validated exercise is saved for reuse.
