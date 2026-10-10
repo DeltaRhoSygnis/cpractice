@@ -131,11 +131,47 @@ def _pipeline(tmp_path: Path, provider) -> GenerationPipeline:
     return GenerationPipeline(provider, problems_dir=tmp_path / "problems")
 
 
+# --- helpers for two-stage generation -------------------------------------
+#
+# Generation now makes two provider calls: first a blueprint, then the problem
+# (plan Stage 1 -> 2). Tests that exercise the problem stage must therefore
+# supply a blueprint response as well.
+
+BLUEPRINT_JSON = json.dumps({
+    "primary_objective": "maintain running state across iterations",
+    "target_reasoning_moves": [
+        "consume a count followed by that many values",
+        "update running state before using it",
+    ],
+    "likely_misconceptions": ["MIS-LATE-UPDATE: printing before updating"],
+    "exercise_role": "core_reasoning",
+    "prerequisites": ["for_loops"],
+})
+
+
+def _two_stage(problem_response: str) -> MockProvider:
+    """A mock that answers the blueprint call, then the problem call."""
+    return MockProvider(
+        responder=lambda system, prompt, operation: (
+            BLUEPRINT_JSON if operation == "build_blueprint" else problem_response
+        )
+    )
+
+
+def _problem_calls(provider: MockProvider) -> int:
+    """Count problem-generation calls, ignoring blueprint calls.
+
+    Generation makes one call per stage, so a cache assertion must look at the
+    stage it is about.
+    """
+    return sum(1 for call in provider.calls if call["operation"] != "build_blueprint")
+
+
 # --- happy path ------------------------------------------------------------
 
 
 def test_generates_and_validates_a_problem(tmp_path: Path) -> None:
-    provider = MockProvider(responses=json.dumps(good_payload()))
+    provider = _two_stage(json.dumps(good_payload()))
 
     outcome = _pipeline(tmp_path, provider).generate(GenerationRequest())
 
@@ -146,7 +182,7 @@ def test_generates_and_validates_a_problem(tmp_path: Path) -> None:
 
 
 def test_saves_package_and_quality_report(tmp_path: Path) -> None:
-    provider = MockProvider(responses=json.dumps(good_payload()))
+    provider = _two_stage(json.dumps(good_payload()))
 
     _pipeline(tmp_path, provider).generate(GenerationRequest())
 
@@ -161,7 +197,7 @@ def test_saves_package_and_quality_report(tmp_path: Path) -> None:
 def test_saved_package_reloads_through_the_repository(tmp_path: Path) -> None:
     from app.storage.problem_repository import ProblemRepository
 
-    provider = MockProvider(responses=json.dumps(good_payload()))
+    provider = _two_stage(json.dumps(good_payload()))
     _pipeline(tmp_path, provider).generate(GenerationRequest())
 
     reloaded = ProblemRepository(tmp_path / "problems").load("c-running-max-gap")
@@ -175,7 +211,7 @@ def test_saved_package_reloads_through_the_repository(tmp_path: Path) -> None:
 
 
 def test_second_identical_request_uses_cache(tmp_path: Path) -> None:
-    provider = MockProvider(responses=json.dumps(good_payload()))
+    provider = _two_stage(json.dumps(good_payload()))
     pipeline = _pipeline(tmp_path, provider)
 
     first = pipeline.generate(GenerationRequest(topic="arithmetic"))
@@ -183,32 +219,32 @@ def test_second_identical_request_uses_cache(tmp_path: Path) -> None:
 
     assert first.from_cache is False
     assert second.from_cache is True
-    assert len(provider.calls) == 1
+    assert _problem_calls(provider) == 1
 
 
 def test_different_parameters_do_not_share_cache(tmp_path: Path) -> None:
-    provider = MockProvider(responses=json.dumps(good_payload()))
+    provider = _two_stage(json.dumps(good_payload()))
     pipeline = _pipeline(tmp_path, provider)
 
     pipeline.generate(GenerationRequest(topic="loops"))
     pipeline.generate(GenerationRequest(topic="arrays"))
 
-    assert len(provider.calls) == 2
+    assert _problem_calls(provider) == 2
 
 
 def test_cache_can_be_bypassed(tmp_path: Path) -> None:
-    provider = MockProvider(responses=json.dumps(good_payload()))
+    provider = _two_stage(json.dumps(good_payload()))
     pipeline = _pipeline(tmp_path, provider)
 
     pipeline.generate(GenerationRequest())
     pipeline.generate(GenerationRequest(), use_cache=False)
 
-    assert len(provider.calls) == 2
+    assert _problem_calls(provider) == 2
 
 
 def test_invalid_problem_is_not_cached(tmp_path: Path) -> None:
     bad = good_payload(reference_solution="int main(void){ printf(\"x\" return 0; }")
-    provider = MockProvider(responses=json.dumps(bad))
+    provider = _two_stage(json.dumps(bad))
     pipeline = _pipeline(tmp_path, provider)
 
     first = pipeline.generate(GenerationRequest())
@@ -217,24 +253,33 @@ def test_invalid_problem_is_not_cached(tmp_path: Path) -> None:
     assert first.accepted is False
     # Not cached, so the provider is consulted again.
     assert second.from_cache is False
-    assert len(provider.calls) == 2
+    assert _problem_calls(provider) == 2
 
 
 # --- provider failure handling ---------------------------------------------
 
 
-def test_auth_error_is_not_retried(tmp_path: Path) -> None:
+def test_auth_error_is_preserved_through_the_blueprint_stage(tmp_path: Path) -> None:
+    """AuthError must keep its type so the API can map it to 502.
+
+    Wrapping it as a generic generation failure would lose the distinction
+    between "your key is wrong" and "the model produced junk".
+    """
     provider = failing_provider(AuthError("bad key"), times=5)
 
     with pytest.raises(AuthError):
         _pipeline(tmp_path, provider).generate(GenerationRequest())
 
+    # One attempt only: an AuthError is permanent and must never be retried.
     assert len(provider.calls) == 1
 
 
 def test_transient_error_is_retried_then_succeeds(tmp_path: Path) -> None:
+    """A transient failure during the blueprint stage is recovered from."""
     provider = MockProvider(
-        responses=json.dumps(good_payload()),
+        responder=lambda system, prompt, operation: (
+            BLUEPRINT_JSON if operation == "build_blueprint" else json.dumps(good_payload())
+        ),
         errors=[ProviderUnavailableError("blip")],
     )
     pipeline = GenerationPipeline(
@@ -246,18 +291,19 @@ def test_transient_error_is_retried_then_succeeds(tmp_path: Path) -> None:
     outcome = pipeline.generate(GenerationRequest())
 
     assert outcome.accepted is True
-    assert len(provider.calls) == 2
+    # One failed blueprint attempt, one successful blueprint, one problem call.
+    assert len(provider.calls) == 3
 
 
 def test_malformed_json_raises_generation_error(tmp_path: Path) -> None:
-    provider = MockProvider(responses="this is not json at all")
+    provider = _two_stage("this is not json at all")
 
     with pytest.raises(GenerationError):
         _pipeline(tmp_path, provider).generate(GenerationRequest())
 
 
 def test_json_that_is_not_an_object_raises(tmp_path: Path) -> None:
-    provider = MockProvider(responses="[1, 2, 3]")
+    provider = _two_stage("[1, 2, 3]")
 
     with pytest.raises(GenerationError):
         _pipeline(tmp_path, provider).generate(GenerationRequest())
@@ -266,7 +312,7 @@ def test_json_that_is_not_an_object_raises(tmp_path: Path) -> None:
 def test_missing_required_metadata_raises(tmp_path: Path) -> None:
     payload = good_payload()
     del payload["title"]
-    provider = MockProvider(responses=json.dumps(payload))
+    provider = _two_stage(json.dumps(payload))
 
     with pytest.raises(GenerationError):
         _pipeline(tmp_path, provider).generate(GenerationRequest())
@@ -277,7 +323,7 @@ def test_invalid_test_id_is_normalised_not_rejected(tmp_path: Path) -> None:
     payload = good_payload(
         tests=[{"id": "Bad ID", "name": "X", "visibility": "public", "stdin": "", "expected_stdout": ""}]
     )
-    provider = MockProvider(responses=json.dumps(payload))
+    provider = _two_stage(json.dumps(payload))
 
     outcome = _pipeline(tmp_path, provider).generate(GenerationRequest())
 
@@ -288,7 +334,7 @@ def test_payload_missing_tests_entirely_is_rejected(tmp_path: Path) -> None:
     """Normalisation must not invent test data."""
     payload = good_payload()
     del payload["tests"]
-    provider = MockProvider(responses=json.dumps(payload))
+    provider = _two_stage(json.dumps(payload))
 
     with pytest.raises(GenerationError):
         _pipeline(tmp_path, provider).generate(GenerationRequest())
@@ -297,7 +343,7 @@ def test_payload_missing_tests_entirely_is_rejected(tmp_path: Path) -> None:
 def test_report_in_progress_is_rejected(tmp_path: Path) -> None:
     """A required field with the wrong type is still a validation failure."""
     payload = good_payload(difficulty=["beginner", "advanced"])
-    provider = MockProvider(responses=json.dumps(payload))
+    provider = _two_stage(json.dumps(payload))
 
     with pytest.raises(GenerationError):
         _pipeline(tmp_path, provider).generate(GenerationRequest())
@@ -401,3 +447,98 @@ def test_cache_clear(tmp_path: Path) -> None:
 
     assert cache.clear() == 2
     assert cache.get("a") is None
+
+
+# --- provenance tag back-filling -------------------------------------------
+#
+# Kenari does not enforce JSON schemas, so models frequently omit the
+# requirement/misconception tags. Without them the gate's misconception-coverage
+# check is vacuous, so the pipeline derives a minimal attribution.
+
+
+def test_backfill_tags_untagged_tests() -> None:
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase, Visibility
+
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        tests=[
+            TestCase(id="a", name="A", stdin="3\n1 2 3\n", expected_stdout="x\n"),
+            TestCase(id="b", name="B", visibility=Visibility.HIDDEN,
+                     stdin="5\n", expected_stdout="y\n"),
+        ],
+    )
+
+    result = _backfill_test_tags(problem)
+
+    assert all(t.is_tagged for t in result.tests)
+
+
+def test_backfill_does_not_overwrite_model_tags() -> None:
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase
+
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        tests=[TestCase(id="a", name="A", stdin="1\n", expected_stdout="x\n",
+                        requirement_ids=["REQ-SPECIFIC"])],
+    )
+
+    result = _backfill_test_tags(problem)
+
+    assert result.tests[0].requirement_ids == ["REQ-SPECIFIC"]
+
+
+def test_backfill_marks_min_and_max_inputs_as_boundaries() -> None:
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase
+
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        tests=[
+            TestCase(id="small", name="Small", stdin="1\n", expected_stdout="a\n"),
+            TestCase(id="big", name="Big", stdin="7\n1 2 3 4 5 6 7\n", expected_stdout="b\n"),
+        ],
+    )
+
+    result = _backfill_test_tags(problem)
+    by_id = {t.id: t for t in result.tests}
+
+    assert "REQ-BOUNDARY-MIN" in by_id["small"].requirement_ids
+    assert "REQ-BOUNDARY-MAX" in by_id["big"].requirement_ids
+
+
+def test_backfill_is_a_no_op_when_all_tests_are_tagged() -> None:
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase
+
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        tests=[TestCase(id="a", name="A", stdin="1\n", expected_stdout="x\n",
+                        misconception_ids=["MIS-X"])],
+    )
+
+    assert _backfill_test_tags(problem) is problem
+
+
+def test_pipeline_backfills_tags_on_generated_problem(tmp_path: Path) -> None:
+    """The end-to-end path must produce tagged tests even from an untagged model."""
+    payload = good_payload()
+    # Simulate a model that omitted every tag, as Kenari often does.
+    for test in payload["tests"]:
+        test.pop("requirement_ids", None)
+        test.pop("misconception_ids", None)
+
+    pipeline = _pipeline(tmp_path, _two_stage(json.dumps(payload)))
+    outcome = pipeline.generate(GenerationRequest())
+
+    assert outcome.accepted is True
+    assert all(t.is_tagged for t in outcome.problem.tests)

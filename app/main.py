@@ -80,6 +80,9 @@ def _build_generation_pipeline(settings: Settings, ledger: UsageLedger) -> Gener
             max_attempts=settings.ai_max_retries,
             backoff_base_seconds=settings.ai_backoff_base_seconds,
         ),
+        # One bounded repair attempt: enough to salvage a near-miss, not enough
+        # to grind against a package that cannot pass.
+        repair_attempts=1,
     )
 
 

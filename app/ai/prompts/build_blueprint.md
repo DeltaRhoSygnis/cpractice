@@ -22,11 +22,22 @@ A blueprint prevents the generator from producing a generic textbook exercise.
 4. `likely_misconceptions` must be **specific wrong approaches** the tests can
    distinguish, such as "off-by-one: processes one element too many" — not
    vague labels like "carelessness".
-5. `difficulty_profile` justifies the level by reasoning demand, not by input
+
+   **Prefix each with a stable ID in `MIS-` form**, e.g.
+   `"MIS-INIT-ZERO: initialising the maximum to 0 fails for all-negative input"`.
+   The test-design stage references these IDs, so they must be stable and unique.
+
+5. `target_reasoning_moves` should likewise be referenceable. Give each a short
+   stable `REQ-` id when useful, e.g. `"REQ-SINGLE-PASS: process the array in one
+   pass"`. Tests will cite these.
+
+6. `difficulty_profile` justifies the level by reasoning demand, not by input
    size or code length.
-6. `transfer_goal` names a materially different task the learner should find
+
+7. `transfer_goal` names a materially different task the learner should find
    easier afterwards. It must not be a superficial renaming.
-7. Choose the `exercise_role` that matches what this exercise is *for*:
+
+8. Choose the `exercise_role` that matches what this exercise is *for*:
    `diagnostic_warmup`, `core_reasoning`, `transfer`, `challenge`,
    `debugging`, or `reflection`.
 
