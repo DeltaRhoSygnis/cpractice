@@ -38,23 +38,34 @@ function toast(message, kind = "ok") {
   const region = $("#toast-region");
   if (!region) return;
   // Pass/fail must never be carried by colour alone: pair the tint with an
-  // icon, exactly as the status lines do. A visually-hidden word gives screen
-  // readers the same state cue, since the message itself may be terse
-  // (e.g. "HTTP 500") and the icon is aria-hidden.
-  const node = el("div", { class: `toast toast--${kind}` }, [
+  // icon, exactly as the status lines do. The whole toast exposes one clean
+  // label, and failures are announced assertively (role="alert") rather than
+  // politely, because a failed submit needs to be heard now.
+  const node = el("div", {
+    class: `toast toast--${kind}`,
+    role: kind === "fail" ? "alert" : "status",
+    "aria-live": kind === "fail" ? "assertive" : "polite",
+    "aria-label": `${TOAST_WORD[kind] || "Notice"}: ${message}`,
+  }, [
     el("span", { class: "toast__icon", "aria-hidden": "true", text: TOAST_ICON[kind] || "✔" }),
-    el("span", { class: "visually-hidden", text: `${TOAST_WORD[kind] || "Notice"}: ` }),
-    el("span", { text: message }),
+    el("span", { "aria-hidden": "true", text: message }),
   ]);
   region.append(node);
-  setTimeout(() => node.remove(), 5000);
+  const remove = () => node.remove();
+  setTimeout(() => {
+    node.classList.add("toast--leaving");
+    node.addEventListener("animationend", remove, { once: true });
+    // Fallback for reduced-motion / no-animation environments.
+    setTimeout(remove, 200);
+  }, 5000);
 }
 
 /* ------------------------------------------------------------------- api */
 
 const api = {
-  async request(method, path, body) {
+  async request(method, path, body, signal) {
     const options = { method, headers: { Accept: "application/json" } };
+    if (signal) options.signal = signal;
     if (body !== undefined) {
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(body);
@@ -92,16 +103,44 @@ const api = {
   progress: () => api.request("GET", "/progress"),
   recommendations: () => api.request("GET", "/recommendations"),
   usage: () => api.request("GET", "/usage"),
-  generate: (params) => api.request("POST", "/problems/generate", params),
+  generate: (params, signal) => api.request("POST", "/problems/generate", params, signal),
 };
 
 /* --------------------------------------------------------------- helpers */
 
 const STATUS_ICON = { ok: "✔", warn: "!", fail: "✘", pending: "…" };
 
+/* Learner-facing labels for engine vocabulary. Showing a raw enum is how a
+   personal tool starts to feel like a CI dashboard. */
+const STATUS_LABEL = {
+  validated: "ready to use",
+  needs_review: "not verified yet",
+  rejected: "was discarded",
+};
+const VERDICT_LABEL = {
+  passed: "all passed",
+  partial: "partly passing",
+  all_failed: "none passed",
+  compilation_failed: "didn't compile",
+};
+const FAILURE_LABEL = {
+  wrong_answer: "wrong output",
+  runtime_error: "crashed while running",
+  timeout: "took too long",
+  output_limit_exceeded: "printed too much output",
+  compilation_error: "didn't compile",
+  internal_error: "grader error",
+};
+
+/** "3 attempts" / "1 attempt" — never the machine-flavoured "(s)". */
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+
+const STATUS_WORD = { ok: "OK", warn: "Warning", fail: "Failed", pending: "Pending" };
+
 function statusLine(state, text) {
   return el("li", { class: `status-line status-line--${state}` }, [
     el("span", { class: "status-icon", "aria-hidden": "true", text: STATUS_ICON[state] }),
+    el("span", { class: "visually-hidden", text: `${STATUS_WORD[state] || ""}: ` }),
     el("span", { text }),
   ]);
 }
@@ -113,15 +152,25 @@ function loading(label = "Loading…") {
   ]);
 }
 
-function errorCard(message, retry) {
+function errorCard(message, retry, status) {
+  // Name the class of failure so the learner knows whether it was them or the
+  // server, and always give a next step. Prefer the HTTP status when present;
+  // fall back to a message heuristic only when we have nothing better.
+  const serverSide =
+    (typeof status === "number" && status >= 500) ||
+    (typeof status !== "number" && /fetch|network|reach/i.test(message));
+  const heading = serverSide ? "Couldn't reach the grader" : "That request wasn't accepted";
   const children = [
-    el("h2", { text: "Something went wrong" }),
+    el("h2", { text: heading }),
     el("p", { class: "muted", text: message }),
+    el("p", { class: "small muted", text: serverSide
+      ? "The server had a problem, not your code. Try again in a moment."
+      : "Check the Dashboard system status if this keeps happening." }),
   ];
   if (retry) {
     children.push(el("button", { class: "secondary", text: "Retry", onclick: retry }));
   }
-  return el("div", { class: "card" }, children);
+  return el("div", { class: "card state--error" }, children);
 }
 
 function emptyState(message) {
@@ -170,62 +219,107 @@ views.dashboard = async () => {
   ]);
   const generateBtn = el("button", { text: "Generate problem" });
   const generateOut = el("div");
+  let activeController = null;
 
   generateBtn.addEventListener("click", async () => {
+    // Guard re-entry on the in-flight controller, not just the disabled button.
+    if (activeController) return;
     generateBtn.disabled = true;
     generateBtn.textContent = "Generating…";
-    generateOut.replaceChildren(
-      el("p", { class: "small muted" }, [
-        el("span", { class: "spinner", "aria-hidden": "true" }),
-        " Asking the model, then compiling and testing the reference. This can take ~30s.",
-      ]),
-    );
+
+    // Staged copy keyed on elapsed time. A rising counter is the cheapest proof
+    // the work is still alive, and honest stage text beats a single "~30s".
+    const started = Date.now();
+    const progress = el("p", { class: "small muted" }, [
+      el("span", { class: "spinner", "aria-hidden": "true" }),
+      el("span", { text: " Writing your problem…" }),
+      el("span", { class: "tabular", text: " 0s" }),
+    ]);
+    const cancelBtn = el("button", { class: "secondary", text: "Cancel" });
+    generateOut.replaceChildren(progress, el("div", { class: "button-row" }, [cancelBtn]));
+
+    const timer = setInterval(() => {
+      const secs = Math.floor((Date.now() - started) / 1000);
+      progress.lastChild.textContent = ` ${secs}s`;
+      const stage = progress.children[1];
+      if (secs >= 45) stage.textContent = " Taking longer than usual — you can keep waiting or cancel.";
+      else if (secs >= 20) stage.textContent = " Still working. Some problems take a minute.";
+      else if (secs >= 8) stage.textContent = " Checking it compiles and passes its own tests…";
+    }, 1000);
+
+    const controller = new AbortController();
+    activeController = controller;
+    cancelBtn.addEventListener("click", () => controller.abort());
+
+    const cleanup = () => {
+      clearInterval(timer);
+      activeController = null;
+      generateBtn.disabled = false;
+      generateBtn.textContent = "Generate problem";
+    };
+
     try {
       const result = await api.generate({
         topic: topic.value.trim() || "loops",
         difficulty: difficulty.value,
-      });
+      }, controller.signal);
       if (result.accepted) {
-        toast(`Generated and validated: ${result.problem_id}`, "ok");
+        toast("New problem ready", "ok");
         const ref = result.reference;
         generateOut.replaceChildren(
           el("div", { class: "verdict verdict--pass" }, [
             el("span", { class: "verdict__icon", "aria-hidden": "true", text: "✔" }),
             el("span", {
-              text: `Validated — reference passes ${ref.passed}/${ref.total} tests`,
+              text: `Ready. Its own reference solution passes all ${ref.total} tests.`,
             }),
           ]),
-          el("p", {}, [
-            el("a", { href: `#/problem/${encodeURIComponent(result.problem_id)}`,
-                      text: "Open the problem →" }),
+          el("div", { class: "button-row" }, [
+            el("button", {
+              text: "Open the problem →",
+              onclick: () => { location.hash = `#/problem/${encodeURIComponent(result.problem_id)}`; },
+            }),
           ]),
         );
         // The new problem changes recommendations and the problem list, so
         // refresh both rather than leaving stale content on screen.
         await Promise.all([refreshProblems(), refreshRecommendations()]);
       } else {
+        // A quality-gate rejection is a tool-side event, not the learner's
+        // mistake. Say so plainly, then tuck the engine codes away.
         generateOut.replaceChildren(
           el("div", { class: "verdict verdict--fail" }, [
             el("span", { class: "verdict__icon", "aria-hidden": "true", text: "✘" }),
-            el("span", { text: "Rejected by the quality gate" }),
+            el("span", {
+              text: "The AI wrote a problem that didn't pass its own tests, so it wasn't kept.",
+            }),
           ]),
-          el("ul", { class: "test-list" },
-            (result.errors || []).map((e) =>
-              el("li", { class: "test-row" }, [
-                el("span", { class: "test-row__icon", text: "!" }),
-                el("span", { class: "test-row__body" }, [
-                  el("div", { class: "test-row__name", text: e.code }),
-                  el("div", { class: "test-row__detail", text: e.message }),
-                ]),
-              ]))),
+          el("p", { class: "small muted", text:
+            "This isn't your fault. Try again, or pick a different topic or difficulty." }),
+          el("details", { class: "disclosure" }, [
+            el("summary", { text: "Why it was discarded" }),
+            el("ul", { class: "test-list" },
+              (result.errors || []).map((e) =>
+                el("li", { class: "test-row" }, [
+                  el("span", { class: "test-row__icon", "aria-hidden": "true", text: "!" }),
+                  el("span", { class: "test-row__body" }, [
+                    el("div", { class: "test-row__name", text: e.code }),
+                    el("div", { class: "test-row__detail", text: e.message }),
+                  ]),
+                ]))),
+          ]),
         );
       }
     } catch (error) {
-      generateOut.replaceChildren(errorCard(error.message));
-      toast(error.message, "fail");
+      if (error.name === "AbortError") {
+        generateOut.replaceChildren(
+          el("p", { class: "small muted", text: "Generation cancelled. Nothing was saved." }),
+        );
+      } else {
+        generateOut.replaceChildren(errorCard(error.message, null, error.status));
+        toast(error.message, "fail");
+      }
     } finally {
-      generateBtn.disabled = false;
-      generateBtn.textContent = "Generate problem";
+      cleanup();
     }
   });
 
@@ -294,7 +388,7 @@ views.dashboard = async () => {
     try {
       const data = await api.listProblems();
       if (!data.count) {
-        problemsCard.append(emptyState("No problems saved yet. Generate one above."));
+        problemsCard.append(emptyState("No problems yet. The generator on the Dashboard creates one."));
         return;
       }
       const list = el("ul", { class: "problem-list" });
@@ -309,7 +403,7 @@ views.dashboard = async () => {
               el("div", { class: "problem-item__meta" }, [
                 el("span", {
                   class: `badge ${problem.status === "validated" ? "badge--ok" : "badge--warn"}`,
-                  text: problem.status,
+                  text: STATUS_LABEL[problem.status] || problem.status,
                 }),
               ]),
             ]),
@@ -349,7 +443,7 @@ views.dashboard = async () => {
 
   api.attempts(5).then((data) => {
     if (!data.count) {
-      recentCard.append(emptyState("No attempts yet."));
+      recentCard.append(emptyState("No attempts yet — run tests on a problem to see it here."));
       return;
     }
     recentCard.append(attemptTable(data.attempts));
@@ -368,7 +462,7 @@ views.problems = async () => {
   try {
     const data = await api.listProblems();
     if (!data.count) {
-      card.append(emptyState("No problems saved yet. Generate one from the dashboard."));
+      card.append(emptyState("No problems yet. The generator on the Dashboard creates one."));
       return container;
     }
     const list = el("ul", { class: "problem-list" });
@@ -391,7 +485,7 @@ views.problems = async () => {
     }
     card.append(list);
   } catch (error) {
-    card.append(errorCard(error.message));
+    card.append(errorCard(error.message, null, error.status));
   }
   return container;
 };
@@ -406,7 +500,7 @@ views.problem = async (problemId) => {
   } catch (error) {
     container.append(
       el("h1", { text: "Problem" }),
-      errorCard(error.message, () => render()),
+      errorCard(error.message, () => render(), error.status),
     );
     return container;
   }
@@ -439,12 +533,12 @@ views.problem = async (problemId) => {
     for (const test of problem.public_tests) {
       examples.append(
         el("div", { class: "field-row" }, [
-          el("div", {}, [
-            el("label", { text: `Input — ${test.name}` }),
+          el("figure", { class: "code-figure" }, [
+            el("figcaption", { class: "caption", text: `Input — ${test.name}` }),
             codeBlock(test.stdin || "(none)"),
           ]),
-          el("div", {}, [
-            el("label", { text: "Expected output" }),
+          el("figure", { class: "code-figure" }, [
+            el("figcaption", { class: "caption", text: "Expected output" }),
             codeBlock(test.expected_stdout || "(none)"),
           ]),
         ]),
@@ -461,7 +555,7 @@ views.problem = async (problemId) => {
   editor.value = loadDraft(problem.id) || problem.starter_code || "";
   editor.addEventListener("input", () => saveDraft(problem.id, editor.value));
 
-  const submitBtn = el("button", { text: "Submit for grading" });
+  const submitBtn = el("button", { text: "Run tests" });
   const clearBtn = el("button", { class: "secondary", text: "Reset to starter" });
   clearBtn.addEventListener("click", () => {
     if (!confirm("Discard your current code and restore the starter?")) return;
@@ -469,36 +563,55 @@ views.problem = async (problemId) => {
     saveDraft(problem.id, editor.value);
   });
 
-  const resultRegion = el("div");
+  const resultRegion = el("div", { "aria-live": "polite", "aria-atomic": "false" });
   let hintsUsed = 0;
   let lastFailure = "";
 
   editorCard.append(
     el("div", { class: "field" }, [editor]),
     el("div", { class: "button-row" }, [submitBtn, clearBtn]),
-    el("p", { class: "small muted", text: "Your draft is saved in this browser." }),
+    el("p", { class: "small muted", text:
+      "Draft saved here on this device — not synced." }),
     resultRegion,
   );
   container.append(editorCard);
 
   // --- hints ---
   const hintCard = el("div", { class: "card" }, [el("h2", { text: "Hints" })]);
-  const ladder = el("div", { class: "hint-ladder", "aria-label": "Hint progress" });
+  const ladder = el("ol", { class: "hint-ladder", "aria-label": "Hint progress" });
+  const ladderStatus = el("p", { class: "small muted ladder-status" });
   const hintOut = el("div");
 
   function renderLadder() {
     ladder.replaceChildren();
     const max = problem.max_hint_level || 5;
     for (let level = 1; level <= max; level++) {
-      const state =
-        level <= hintsUsed ? "hint-step--used" : level === hintsUsed + 1 ? "hint-step--next" : "";
+      const used = level <= hintsUsed;
+      const next = level === hintsUsed + 1;
+      const state = used ? "hint-step--used" : next ? "hint-step--next" : "";
+      const meaning = used ? "used" : next ? "next available" : "not yet used";
       ladder.append(
-        el("span", {
-          class: `hint-step ${state}`,
-          text: String(level),
-          title: level <= hintsUsed ? `Hint ${level} used` : `Hint ${level}`,
-        }),
+        el("li", { class: `hint-step ${state}` }, [
+          el("span", { "aria-hidden": "true", text: String(level) }),
+          el("span", { class: "visually-hidden", text: `Hint ${level}: ${meaning}` }),
+        ]),
       );
+    }
+    ladderStatus.textContent =
+      hintsUsed === 0 ? `Hints: none used yet (${max} available)`
+        : `Hints: ${hintsUsed} of ${max} used`;
+  }
+
+  function updateHintButton() {
+    const max = problem.max_hint_level || 5;
+    if (hintsUsed >= max) {
+      hintBtn.disabled = true;
+      hintBtn.textContent = "No more hints";
+    } else {
+      hintBtn.disabled = false;
+      hintBtn.textContent = hintsUsed + 1 === max
+        ? `Get the final hint (${max} of ${max}) →`
+        : `Get hint ${hintsUsed + 1} of ${max} →`;
     }
   }
 
@@ -511,20 +624,24 @@ views.problem = async (problemId) => {
       renderLadder();
       const box = el("div", { class: "hint-box" }, [
         el("div", { class: "hint-box__label", text:
-          `Hint ${result.level}${result.is_solution_reveal ? " — approach" : ""}` +
-          `${result.source === "generated" ? " (generated)" : ""}` }),
+          result.is_solution_reveal
+            ? `Hint ${result.level} of ${problem.max_hint_level || 5} — the approach`
+            : `Hint ${result.level}` }),
         el("div", { text: result.text }),
       ]);
       hintOut.append(box);
       if (!result.next_level) {
-        hintBtn.disabled = true;
-        hintBtn.textContent = "All hints used";
+        // Exhausting the ladder is the moment to route the learner forward, not
+        // dead-end them: say plainly that the solution is now reasonable.
+        hintOut.append(el("p", { class: "small muted", text:
+          "That was the last hint. If you're still stuck, revealing the solution is a "
+          + "reasonable next step — many learners read it, then retype it from memory." }));
       }
     } catch (error) {
       toast(error.message, "warn");
       hintOut.append(el("p", { class: "muted small", text: error.message }));
     } finally {
-      hintBtn.disabled = hintBtn.disabled; // state already set above
+      updateHintButton();
     }
   });
 
@@ -548,8 +665,10 @@ views.problem = async (problemId) => {
   });
 
   renderLadder();
+  updateHintButton();
   hintCard.append(
     ladder,
+    ladderStatus,
     el("div", { class: "button-row" }, [hintBtn, solutionBtn]),
     hintOut,
   );
@@ -558,7 +677,7 @@ views.problem = async (problemId) => {
   // --- submit handler ---
   submitBtn.addEventListener("click", async () => {
     submitBtn.disabled = true;
-    submitBtn.textContent = "Grading…";
+    submitBtn.textContent = "Running tests…";
     resultRegion.replaceChildren(loading("Compiling and running tests…"));
     try {
       const result = await api.submit(problem.id, editor.value, hintsUsed);
@@ -572,11 +691,11 @@ views.problem = async (problemId) => {
         result.summary.all_passed ? "ok" : "warn",
       );
     } catch (error) {
-      resultRegion.replaceChildren(errorCard(error.message));
+      resultRegion.replaceChildren(errorCard(error.message, null, error.status));
       toast(error.message, "fail");
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = "Submit for grading";
+      submitBtn.textContent = "Run tests";
     }
   });
 
@@ -588,7 +707,7 @@ views.progress = async () => {
   const container = el("div");
   container.append(
     el("h1", { text: "Progress" }),
-    el("p", { class: "subtitle", text: "Observed results from recorded attempts." }),
+    el("p", { class: "subtitle", text: "How you're doing, based on everything you've submitted." }),
   );
 
   const summaryCard = el("div", { class: "card" }, [el("h2", { text: "Summary" })]);
@@ -603,7 +722,7 @@ views.progress = async () => {
       [String(data.attempts), "Attempts"],
       [String(data.problems_solved), "Problems solved"],
       [String(data.distinct_problems), "Problems tried"],
-      [rate, "Test pass rate"],
+      [rate, "Tests passed"],
     ]) {
       grid.append(
         el("div", { class: "stat" }, [
@@ -615,15 +734,16 @@ views.progress = async () => {
     summaryCard.append(grid);
 
     if (data.weak_topics && data.weak_topics.length) {
-      summaryCard.append(el("h2", { text: "Weak topics", style: "margin-top:1rem" }));
+      summaryCard.append(el("h3", { text: "Topics to revisit" }));
       const list = el("ul", { class: "test-list" });
       for (const item of data.weak_topics) {
         list.append(
           el("li", { class: "test-row" }, [
-            el("span", { class: "test-row__icon", text: "!" }),
+            el("span", { class: "test-row__icon", "aria-hidden": "true", text: "!" }),
             el("span", { class: "test-row__body" }, [
               el("div", { class: "test-row__name", text: (item.topics || []).join(", ") }),
-              el("div", { class: "test-row__detail", text: `${item.failures} failing attempt(s)` }),
+              el("div", { class: "test-row__detail",
+                text: `failing in ${plural(item.failures, "attempt", "attempts")}` }),
             ]),
           ]),
         );
@@ -634,15 +754,17 @@ views.progress = async () => {
     const categories = data.failure_categories || {};
     const entries = Object.entries(categories);
     if (entries.length) {
-      summaryCard.append(el("h2", { text: "Failure categories", style: "margin-top:1rem" }));
+      summaryCard.append(el("h3", { text: "What's going wrong" }));
       const list = el("ul", { class: "test-list" });
       for (const [category, count] of entries) {
         list.append(
           el("li", { class: "test-row" }, [
-            el("span", { class: "test-row__icon", text: "•" }),
+            el("span", { class: "test-row__icon", "aria-hidden": "true", text: "•" }),
             el("span", { class: "test-row__body" }, [
-              el("div", { class: "test-row__name", text: category.replace(/_/g, " ") }),
-              el("div", { class: "test-row__detail", text: `${count} occurrence(s)` }),
+              el("div", { class: "test-row__name",
+                text: FAILURE_LABEL[category] || category.replace(/_/g, " ") }),
+              el("div", { class: "test-row__detail",
+                text: plural(count, "time", "times") }),
             ]),
           ]),
         );
@@ -653,7 +775,7 @@ views.progress = async () => {
 
   api.attempts(25).then((data) => {
     if (!data.count) {
-      attemptsCard.append(emptyState("No attempts recorded yet."));
+      attemptsCard.append(emptyState("No attempts yet — run tests on a problem to see it here."));
       return;
     }
     attemptsCard.append(attemptTable(data.attempts));
@@ -670,18 +792,19 @@ views.progress = async () => {
         ]),
         el("div", { class: "stat" }, [
           el("div", { class: "stat__value", text: String(today.failures || 0) }),
-          el("div", { class: "stat__label", text: "Failures" }),
+          el("div", { class: "stat__label", text: "Failed requests" }),
         ]),
         el("div", { class: "stat" }, [
           el("div", { class: "stat__value", text: String(today.total_tokens || 0) }),
-          el("div", { class: "stat__label", text: "Tokens" }),
+          el("div", { class: "stat__label", text: "Tokens used" }),
         ]),
         el("div", { class: "stat" }, [
-          el("div", { class: "stat__value", text: budget.unlimited ? "∞" : String(budget.remaining) }),
-          el("div", { class: "stat__label", text: "Budget left" }),
+          el("div", { class: "stat__value",
+            text: budget.unlimited ? "Unlimited" : String(budget.remaining) }),
+          el("div", { class: "stat__label", text: "Requests left" }),
         ]),
       ]),
-      el("p", { class: "small muted", text: `${data.provider} / ${data.model}` }),
+      el("p", { class: "small muted", text: `Using ${data.model}` }),
     );
   }).catch((error) => usageCard.append(el("p", { class: "muted", text: error.message })));
 
@@ -708,7 +831,9 @@ function attemptTable(attempts) {
             el("span", { class: "muted", text: ` — ${attempt.passed}/${attempt.total} tests` }),
           ]),
           el("div", { class: "test-row__detail", text:
-            `${attempt.verdict.replace(/_/g, " ")} · ${attempt.hints_used} hint(s) · ${attempt.created_at}` }),
+            `${VERDICT_LABEL[attempt.verdict] || attempt.verdict.replace(/_/g, " ")}`
+            + ` · ${plural(attempt.hints_used, "hint", "hints")}`
+            + ` · ${attempt.created_at}` }),
         ]),
       ]),
     );
@@ -720,6 +845,10 @@ function renderResult(result) {
   const fragment = document.createDocumentFragment();
   const summary = result.summary || {};
   const passedAll = summary.all_passed;
+  const failed = (summary.total || 0) - (summary.passed || 0);
+  const hiddenFailing = (result.tests || []).filter(
+    (t) => !t.passed && t.visibility === "hidden",
+  ).length;
 
   fragment.append(
     el("div", { class: `verdict ${passedAll ? "verdict--pass" : "verdict--fail"}` }, [
@@ -728,37 +857,53 @@ function renderResult(result) {
       }),
       el("span", {
         text: passedAll
-          ? `All ${summary.total} tests passed`
-          : `${summary.passed} / ${summary.total} tests passed`,
+          ? `All ${plural(summary.total, "test", "tests")} passed`
+          : `${summary.passed} of ${summary.total} passed — ${plural(failed, "test", "tests")} failed`
+            + (hiddenFailing ? ` (${plural(hiddenFailing, "test is", "tests are")} hidden)` : ""),
       }),
     ]),
   );
+
+  // Coaching line: the whole point of running tests is knowing what to do next,
+  // so it gets its own band directly under the verdict, not the dimmest style.
+  if (result.next_action === "request_hint") {
+    fragment.append(el("p", { class: "next-action", text:
+      "Stuck? Use “Get next hint” below for guidance without spoiling the answer." }));
+  } else if (result.next_action === "fix_compilation") {
+    fragment.append(el("p", { class: "next-action", text:
+      "Fix the compiler errors below, then run the tests again." }));
+  } else if (result.next_action === "review_and_retry") {
+    fragment.append(el("p", { class: "next-action", text:
+      "Out of hints — compare your output against the expected values above, then try again." }));
+  }
 
   // Compilation diagnostics are the compiler's own words about the learner's
   // code, so they are safe (and useful) to show.
   if (!result.compilation.success && result.compilation.diagnostics) {
     fragment.append(
-      el("h2", { text: "Compiler output", style: "font-size:.95rem;margin:.9rem 0 .3rem" }),
+      el("h3", { text: "Compiler output" }),
       codeBlock(result.compilation.diagnostics),
     );
   }
 
   const tests = result.tests || [];
   if (tests.length) {
-    fragment.append(
-      el("h2", { text: "Tests", style: "font-size:.95rem;margin:.9rem 0 .3rem" }),
-    );
+    fragment.append(el("h3", { text: "Tests" }));
     const list = el("ul", { class: "test-list" });
     for (const test of tests) {
       const hidden = test.visibility === "hidden";
       const body = [
-        el("div", { class: "test-row__name", text: test.test_name }),
+        el("div", { class: "test-row__name" }, [
+          el("span", { class: "visually-hidden",
+            text: test.passed ? "Passed: " : "Failed: " }),
+          el("span", { text: test.test_name }),
+        ]),
       ];
       if (hidden) {
-        // Hidden test detail is never sent by the API; say so plainly rather
-        // than implying output was withheld by the UI.
+        // Hidden test detail is never sent by the API. Explain what "hidden"
+        // means for the learner rather than describing what the UI withholds.
         body.push(el("div", { class: "test-row__hidden", text:
-          "hidden test — details are not shown" }));
+          "Hidden test — checks extra cases you can't see, so you can't tune your code to the grader." }));
       } else if (test.detail) {
         body.push(el("div", { class: "test-row__detail", text: test.detail }));
       }
@@ -773,14 +918,6 @@ function renderResult(result) {
       );
     }
     fragment.append(list);
-  }
-
-  if (result.next_action === "request_hint") {
-    fragment.append(el("p", { class: "small muted", text:
-      "Stuck? Use “Get next hint” below for guidance without spoiling the answer." }));
-  } else if (result.next_action === "fix_compilation") {
-    fragment.append(el("p", { class: "small muted", text:
-      "Fix the compiler errors above, then submit again." }));
   }
 
   return fragment;
@@ -818,7 +955,10 @@ function renderMarkdown(text) {
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
       closeList();
-      const level = heading[1].length + 2; // keep page heading hierarchy sane
+      // A statement lives inside a card whose title is an h2. Map `#`->h3 and
+      // never exceed h3, so the statement can never skip a level or present a
+      // heading larger than the card that contains it.
+      const level = Math.min(heading[1].length + 2, 3);
       out.push(`<h${level}>${heading[2]}</h${level}>`);
       continue;
     }
@@ -856,6 +996,14 @@ function setActiveNav(name) {
 }
 
 let renderToken = 0;
+let firstRender = true;
+
+const ROUTE_TITLE = {
+  dashboard: "Dashboard",
+  problems: "Problems",
+  progress: "Progress",
+  problem: "Problem",
+};
 
 async function render() {
   const view = $("#view");
@@ -880,14 +1028,24 @@ async function render() {
       node = await views.dashboard();
     }
   } catch (error) {
-    node = errorCard(error.message || String(error));
+    node = errorCard(error.message || String(error), null, error.status);
   }
 
   // A newer navigation started while this one was loading.
   if (token !== renderToken) return;
 
   view.replaceChildren(node);
-  $("#main").focus({ preventScroll: true });
+
+  // Announce the route via a small dedicated status node rather than making
+  // the whole view a live region (which would read the entire page aloud on
+  // every navigation). On the first paint we skip the focus move so we do not
+  // steal focus from the address bar.
+  const announcer = $("#route-announcer");
+  if (announcer) announcer.textContent = ROUTE_TITLE[path] || "CPractice";
+  if (!firstRender) {
+    $("#main").focus({ preventScroll: true });
+  }
+  firstRender = false;
 }
 
 window.addEventListener("hashchange", render);

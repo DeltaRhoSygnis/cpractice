@@ -233,11 +233,29 @@ def test_control_border_has_its_own_token() -> None:
 
 
 def test_reduced_motion_stops_the_spinner() -> None:
-    """Reduced motion must neutralise, not merely slow, the spinner."""
+    """Reduced motion must neutralise, not merely slow, the spinner.
+
+    Ordering matters: the reduced-motion `animation: none` must appear AFTER the
+    base spinner rule, or equal-specificity source order lets the animation win.
+    """
     css = (WEB / "styles.css").read_text(encoding="utf-8")
 
     assert "prefers-reduced-motion" in css
     assert "animation: none" in css
+    assert css.index(".spinner") < css.index("animation: none")
+
+
+def test_route_changes_announce_without_live_region_on_view() -> None:
+    """Navigation announces via a small status node, not the whole view.
+
+    Making #view a live region would read the entire page aloud on every route.
+    """
+    index = (WEB / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="route-announcer"' in index
+    assert 'role="status"' in index
+    # #view must NOT itself be a live region.
+    assert 'id="view" aria-live' not in index
 
 
 def test_transitions_name_their_properties() -> None:
@@ -249,11 +267,41 @@ def test_transitions_name_their_properties() -> None:
 
 
 def test_status_is_never_signalled_by_colour_alone() -> None:
-    """Icons accompany status colours in both the status list and toasts."""
+    """Toasts carry an icon and a status word, not just a colour strip."""
     script = (WEB / "app.js").read_text(encoding="utf-8")
 
+    # The toast must expose a non-colour cue: an icon glyph and a status word
+    # (used as an aria-label so the state is announced, not only seen).
     assert "TOAST_ICON" in script
-    assert "status-icon" in script or "STATUS_ICON" in script
+    assert "TOAST_WORD" in script
+    assert '"✘"' in script and '"✔"' in script
+
+
+def test_verdict_and_failure_labels_match_backend_enums() -> None:
+    """The label maps must key on values the backend can actually send.
+
+    A map wired to invented enum values silently falls back to raw machine
+    text, which is the exact thing the labels exist to prevent.
+    """
+    script = (WEB / "app.js").read_text(encoding="utf-8")
+
+    # Real attempt verdicts: app/feedback/reporter.py::verdict
+    for verdict in ("passed", "partial", "all_failed", "compilation_failed"):
+        assert f'{verdict}:' in script, f"VERDICT_LABEL missing {verdict!r}"
+
+    # Real failure categories: app/schemas/grading.py::ResultCategory
+    for category in ("wrong_answer", "runtime_error", "timeout",
+                     "output_limit_exceeded", "compilation_error", "internal_error"):
+        assert f'{category}:' in script, f"FAILURE_LABEL missing {category!r}"
+
+
+def test_error_card_uses_http_status_not_message_regex() -> None:
+    """Server-vs-client failures are classified by status, not string guessing."""
+    script = (WEB / "app.js").read_text(encoding="utf-8")
+
+    assert "error.status" in script
+    # The fragile `\b(5\d\d)\b` message probe must be gone.
+    assert r"\b(5\d\d)\b" not in script
 
 
 def test_glass_is_limited_and_has_a_flat_backdrop() -> None:
