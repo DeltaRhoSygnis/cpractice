@@ -20,7 +20,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.schemas.problem import Problem, ProblemMetadata
+from app.schemas.problem import CONTENT_KEYS, Problem, ProblemMetadata
 from app.schemas.test_case import TestCase
 
 METADATA_FILENAME = "problem.json"
@@ -28,9 +28,6 @@ STATEMENT_FILENAME = "statement.md"
 STARTER_DIR = "starter"
 REFERENCE_DIR = "reference"
 QUALITY_REPORT_FILENAME = "quality_report.json"
-
-# Keys in problem.json that hold package content rather than metadata.
-_CONTENT_KEYS = frozenset({"tests", "hints", "solution_explanation"})
 
 
 class ProblemNotFoundError(LookupError):
@@ -73,7 +70,7 @@ class ProblemRepository:
         metadata_raw = {
             key: value
             for key, value in raw.items()
-            if key not in _CONTENT_KEYS
+            if key not in CONTENT_KEYS
         }
 
         try:
