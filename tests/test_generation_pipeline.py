@@ -199,10 +199,31 @@ def test_missing_required_metadata_raises(tmp_path: Path) -> None:
         _pipeline(tmp_path, provider).generate(GenerationRequest())
 
 
-def test_invalid_test_shape_raises(tmp_path: Path) -> None:
+def test_invalid_test_id_is_normalised_not_rejected(tmp_path: Path) -> None:
+    """A cosmetic id problem is repaired rather than discarding the problem."""
     payload = good_payload(
         tests=[{"id": "Bad ID", "name": "X", "visibility": "public", "stdin": "", "expected_stdout": ""}]
     )
+    provider = MockProvider(responses=json.dumps(payload))
+
+    outcome = _pipeline(tmp_path, provider).generate(GenerationRequest())
+
+    assert outcome.problem.tests[0].id == "bad-id"
+
+
+def test_payload_missing_tests_entirely_is_rejected(tmp_path: Path) -> None:
+    """Normalisation must not invent test data."""
+    payload = good_payload()
+    del payload["tests"]
+    provider = MockProvider(responses=json.dumps(payload))
+
+    with pytest.raises(GenerationError):
+        _pipeline(tmp_path, provider).generate(GenerationRequest())
+
+
+def test_report_in_progress_is_rejected(tmp_path: Path) -> None:
+    """A required field with the wrong type is still a validation failure."""
+    payload = good_payload(difficulty=["beginner", "advanced"])
     provider = MockProvider(responses=json.dumps(payload))
 
     with pytest.raises(GenerationError):

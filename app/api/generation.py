@@ -42,7 +42,10 @@ def generate_problem(request: Request, body: GenerateRequest) -> dict:
     if pipeline is None:
         raise HTTPException(
             status_code=503,
-            detail="AI provider is not configured. Set GOOGLE_API_KEY.",
+            detail=(
+                "AI provider is not configured. Set KENARI_API_KEY "
+                "(or select another provider via AI_PROVIDER)."
+            ),
         )
 
     generation_request = GenerationRequest(

@@ -43,6 +43,7 @@ def _settings(tmp_path: Path) -> Settings:
         database_path=tmp_path / "data" / "cpractice.db",
         problems_dir=tmp_path / "problems",
         workspaces_dir=tmp_path / "workspaces",
+        kenari_api_key=None,
         google_api_key=None,
     )
 
@@ -79,7 +80,7 @@ def test_generation_without_key_returns_503(tmp_path: Path) -> None:
         response = client.post("/api/problems/generate", json={})
 
     assert response.status_code == 503
-    assert "GOOGLE_API_KEY" in response.json()["detail"]
+    assert "KENARI_API_KEY" in response.json()["detail"] or "GOOGLE_API_KEY" in response.json()["detail"]
 
 
 def test_health_reports_ai_disabled_without_key(tmp_path: Path) -> None:

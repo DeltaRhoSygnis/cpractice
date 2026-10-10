@@ -32,6 +32,15 @@ def _compiler_available(compiler: str) -> bool:
     return result.returncode == 0
 
 
+def _ai_key_configured(settings) -> bool:
+    """Return whether the key for the configured provider is present."""
+    if settings.ai_provider == "kenari":
+        return bool(settings.kenari_api_key)
+    if settings.ai_provider == "google":
+        return bool(settings.google_api_key)
+    return False
+
+
 @router.get("/health")
 def health(request: Request) -> dict[str, Any]:
     """Report application liveness and configured capabilities."""
@@ -50,7 +59,7 @@ def health(request: Request) -> dict[str, Any]:
                 "provider": settings.ai_provider,
                 "model": settings.ai_model,
                 # Presence only - never the value.
-                "key_configured": bool(settings.google_api_key),
+                "key_configured": _ai_key_configured(settings),
             },
             "storage": {
                 "problems_dir": settings.problems_path.is_dir(),

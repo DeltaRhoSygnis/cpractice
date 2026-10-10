@@ -36,10 +36,16 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # --- AI provider ---
-    ai_provider: str = "google"
-    ai_model: str = "gemini-2.0-flash"
-    google_api_key: str | None = None
+    ai_provider: str = "kenari"
+    ai_model: str = "deepseek-v4-1-flash"
+
+    # Kenari gateway (OpenAI-compatible) - primary provider.
     kenari_api_key: str | None = None
+    kenari_base_url: str = "https://kenari.id/v1"
+
+    # Google AI Studio / Gemini (alternative adapter).
+    google_api_key: str | None = None
+
     ai_max_retries: int = 3
     ai_backoff_base_seconds: float = 2.0
     ai_max_concurrent_requests: int = 2
