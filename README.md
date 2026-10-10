@@ -31,18 +31,16 @@ compilation and execution work without the Termux `noexec`-filesystem limitation
 
 1. Open the repo in a Codespace (browser or `gh codespace code`).
 2. `postCreateCommand` installs dependencies and runs preflight checks.
-3. Create your env file and add your Google AI Studio key:
+3. Create your env file and add your AI provider key:
 
    ```bash
    cp .env.example .env
-   # edit .env -> GOOGLE_API_KEY=<your key>
+   # default provider is Kenari -> edit .env -> KENARI_API_KEY=<your key>
    ```
 
-   In Codespaces you normally **don't** need this: the repo-scoped secret
-   `GEMINI_API_KEY` is injected automatically and mapped to `GOOGLE_API_KEY`
-   by the devcontainer. Secrets are only injected when the container is
-   **created or rebuilt** after the secret exists — after adding a secret, run
-   *Command Palette → Codespaces: Rebuild Container*.
+   In Codespaces the repo-scoped secret is injected automatically. Secrets are
+   only delivered when the container is **created** after the secret exists;
+   after adding one, recreate the codespace.
 
    Verify with:
 
@@ -107,9 +105,10 @@ All configuration comes from environment variables (see `.env.example`).
 
 | Variable | Purpose |
 |---|---|
-| `AI_PROVIDER` | `google` (default) |
-| `AI_MODEL` | Gemini model name |
-| `GOOGLE_API_KEY` | Google AI Studio key (required for AI features) |
+| `AI_PROVIDER` | `kenari` (default) or `google` |
+| `AI_MODEL` | model id, e.g. `deepseek-v4-1-flash` |
+| `KENARI_API_KEY` | Kenari gateway key (default provider) |
+| `GOOGLE_API_KEY` | Google AI Studio key (used only when `AI_PROVIDER=google`) |
 | `CC_COMPILER` / `CC_STANDARD` | C compiler + language standard |
 | `RUN_WALL_TIMEOUT_MS` / `RUN_MEMORY_LIMIT_MB` / `RUN_MAX_OUTPUT_BYTES` | grading limits |
 | `KENARI_API_KEY` | OpenCode provider key (dev tooling only) |
