@@ -15,6 +15,20 @@ from app.schemas.test_case import ComparisonMode, TestCase
 
 SCHEMA_VERSION = "1.0"
 
+#: Keys in a problem package payload that hold content rather than metadata.
+#: Shared by the repository loader and the generation pipeline so the two
+#: cannot drift apart.
+CONTENT_KEYS = frozenset(
+    {
+        "statement_md",
+        "starter_code",
+        "reference_solution",
+        "tests",
+        "hints",
+        "solution_explanation",
+    }
+)
+
 
 class Difficulty(str, Enum):
     """Coarse difficulty band."""
@@ -90,7 +104,6 @@ class Problem(BaseModel):
     """A complete problem package (metadata + content + tests)."""
 
     model_config = ConfigDict(extra="forbid")
-
     metadata: ProblemMetadata
     statement_md: str = Field(min_length=1)
     starter_code: str = ""

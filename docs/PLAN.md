@@ -189,7 +189,7 @@ attempts, and hidden-data separation.
 - [x] M1 — Local application foundation
 - [x] M2 — Deterministic grading engine
 - [x] M3 — Problem package contract
-- [ ] M4 — AI problem generation
+- [x] M4 — AI problem generation
 - [ ] M5 — Learning feedback
 
 ### M1 delivered
@@ -268,3 +268,50 @@ The API response models are narrower than the internal schemas. Hidden tests
 expose **only `id` and `name`** - never `stdin` or `expected_stdout`. The
 reference solution is withheld unless explicitly requested. Verified by
 `test_hidden_test_content_is_never_exposed`.
+
+### M4 delivered
+
+| File | Purpose |
+|---|---|
+| `app/ai/base.py` | provider interface + error taxonomy (auth / invalid / rate-limit / unavailable / malformed) |
+| `app/ai/google.py` | Gemini REST adapter; maps HTTP status to the taxonomy, never leaks the key |
+| `app/ai/mock.py` | scriptable provider so tests need no live calls |
+| `app/ai/rate_limits.py` | bounded retry with exponential backoff; permanent errors never retried |
+| `app/ai/cache.py` | content-addressed generation cache (quota defence) |
+| `app/generation/prompts.py` | system/user prompts, JSON schema, tolerant JSON parsing |
+| `app/generation/quality_gate.py` | structural + behavioural validation with severity findings |
+| `app/generation/pipeline.py` | request → parse → gate → save |
+| `app/api/generation.py` | `POST /api/problems/generate` |
+
+**M4 done-when:** a generated exercise is rejected if malformed or
+inconsistent, and a validated exercise is saved for reuse.
+
+#### Quality gate behaviour
+
+The gate never awards a numeric "quality score". It reports findings with a
+severity and validates only when no ERROR-level finding exists. Checks:
+
+- structure: statement present, reference present, tests present, hidden-test
+  minimum, duplicate ids, duplicate input/expected pairs, hint depth
+- limits: unreasonable time/memory limits are errors
+- behaviour: **compiles the reference and runs it against every test**; a
+  reference that fails its own tests rejects the problem
+
+This is the enforcement point for design decision #3 - *AI never decides
+pass/fail*.
+
+#### Provider failure handling
+
+| Failure | Action |
+|---|---|
+| `AuthError` | fail immediately (never retried) |
+| `InvalidRequestError` | fail immediately (never retried) |
+| `RateLimitError` | bounded retry, honouring `Retry-After` |
+| `ProviderUnavailableError` | bounded retry with exponential backoff |
+| `MalformedResponseError` | bounded retry (model formatting is transient) |
+
+#### Offline-first behaviour
+
+The application starts and serves everything without AI credentials;
+generation returns `503` with a clear message. Saved problems remain fully
+practisable, satisfying the M6 goal early (design decision #4).
