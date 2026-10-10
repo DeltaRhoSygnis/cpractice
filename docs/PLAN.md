@@ -34,8 +34,29 @@ the `noexec` storage constraint documented in the README).
 | Android shared storage is `noexec` | Compiled binaries build but cannot execute there | Repo + workspaces live in an exec-capable filesystem |
 | Termux `gcc` is clang 21.1.8 | Some flags differ | Fixed flag set: `-std=c11 -O2 -pipe -Wall -Wextra`; avoid `-fsanitize`/`-march=native` |
 | `uvicorn[standard]` needs Rust-built `watchfiles` | Fails to build in Termux | Depend on plain `uvicorn` |
+| No Android wheels for `pydantic-core` / `rpds-py` | pip compiles Rust from source (~20-40 min, once) | Accept once; wheels are then cached |
+| Android `RLIMIT_AS` aborts the bionic linker | Program dies at load, intermittently at every value | Skip `RLIMIT_AS` on Android |
+| Android `RLIMIT_NPROC` corrupts signal reporting | Crashes report as exit 1 → wrong answer | Skip `RLIMIT_NPROC` on Android; detect crashes via negative exit codes |
 | No Docker / no root locally | Strong sandboxing unavailable | Local isolation = dedicated tmpdir + timeouts + output caps; hosted uses containers |
 | Python 3.14 on Termux | Some wheels may be unavailable | Codespaces pins Python 3.12 |
+
+### Codespaces constraint: do not add devcontainer features
+
+Verified by experiment against this repository:
+
+| devcontainer config | Result |
+|---|---|
+| `image` only | Builds correctly: Debian image, Python 3.12, `postCreateCommand` runs, secrets injected |
+| `image` + any `ghcr.io` feature (e.g. `sshd`) | Build fails and GitHub silently falls back to a minimal Alpine *recovery container* (`CODESPACES_RECOVERY_CONTAINER=true`) with no Python, no secrets, and no setup |
+
+A recovery container is easy to mistake for a working codespace. Check for it with::
+
+    echo "${CODESPACES_RECOVERY_CONTAINER:-<unset>}"
+
+**Therefore:** the devcontainer intentionally declares **no `features` block**.
+Interactive access uses the browser or VS Code terminal rather than `gh codespace
+ssh`. Re-adding a feature will silently break secret injection, the Python
+toolchain, and `postCreateCommand`.
 
 ---
 
