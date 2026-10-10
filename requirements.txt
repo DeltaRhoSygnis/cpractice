@@ -1,0 +1,21 @@
+# CPractice runtime dependencies.
+# Pinned after verifying compatibility with Python 3.12 (Codespaces image).
+# On Termux/Android use: pip install -r requirements.txt
+
+# --- Web backend ---
+fastapi==0.115.6
+uvicorn==0.34.0
+python-multipart==0.0.20
+
+# --- Validation / config ---
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+jsonschema==4.23.0
+
+# --- AI provider (Google Gemini adapter uses raw HTTP via httpx) ---
+httpx==0.28.1
+
+# --- Testing ---
+pytest==8.3.4
+pytest-asyncio==0.25.0
