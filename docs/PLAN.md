@@ -191,6 +191,9 @@ attempts, and hidden-data separation.
 - [x] M3 — Problem package contract
 - [x] M4 — AI problem generation
 - [x] M5 — Learning feedback
+- [x] M6 — Quota resilience and history
+- [ ] M7 — Adaptive practice
+- [ ] M8 — Hosted deployment readiness
 
 ### M1 delivered
 
@@ -387,3 +390,47 @@ pass/fail*.
 The application starts and serves everything without AI credentials;
 generation returns `503` with a clear message. Saved problems remain fully
 practisable, satisfying the M6 goal early (design decision #4).
+
+### M6 delivered
+
+| File | Purpose |
+|---|---|
+| `app/storage/database.py` | SQLite schema, per-thread connections, WAL, FK enforcement, transactions |
+| `app/storage/attempt_repository.py` | attempt + test-result persistence, progress aggregation, problem index |
+| `app/storage/usage_ledger.py` | provider usage ledger, daily budget, `LedgeredProvider` decorator |
+| `app/api/progress.py` | `GET /api/attempts`, `/api/attempts/{id}`, `/api/progress`, `/api/usage` |
+
+**M6 done-when:** previously saved exercises remain usable during provider
+downtime or quota exhaustion - covered by
+`test_saved_problems_remain_usable_without_a_provider` and
+`test_history_survives_a_restart`.
+
+#### Quota resilience
+
+| Control | Implementation |
+|---|---|
+| Cache | validated packages cached by request hash; a repeat request costs no quota |
+| Usage ledger | every call recorded with provider, model, operation, status, tokens |
+| Daily budget | `AI_DAILY_REQUEST_BUDGET`; refusals are recorded and raise `RateLimitError` |
+| Bounded retry | permanent errors never retried; `Retry-After` honoured |
+| Manual fallback | saved exercises grade and hint with no provider configured |
+
+The ledger stores **metadata only** - never prompts or responses.
+
+#### Storage rules
+
+* Hidden test diagnostics are **not** persisted: `test_results.detail` is empty
+  for hidden tests, so exporting history cannot leak expected values.
+* Progress is reported as observed counts and a pass rate over observed tests,
+  never as a claim about ability.
+* The database path is gitignored (`data/*.db`).
+
+#### Live verification
+
+```
+submit starter   -> all_failed 0/6   attempt #2
+submit correct   -> passed     6/6   attempt #3
+GET /api/attempts -> 3 attempts, newest first
+GET /api/progress -> attempts=3 solved=1 pass_rate=0.333 (6/18)
+GET /api/usage    -> provider=kenari, budget unlimited
+```

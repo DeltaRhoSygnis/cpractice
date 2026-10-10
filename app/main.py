@@ -19,13 +19,16 @@ from app.ai.cache import GenerationCache
 from app.ai.google import GoogleProvider
 from app.ai.kenari import KenariProvider
 from app.ai.rate_limits import RetryPolicy
-from app.api import generation, health, problems, submissions
+from app.api import generation, health, problems, progress, submissions
 from app.config import Settings, get_settings
 from app.feedback.hint_service import HintService
 from app.generation.pipeline import GenerationPipeline
 from app.services.problem_service import ProblemService
 from app.services.submission_service import SubmissionService
+from app.storage.attempt_repository import AttemptRepository, ProblemIndex
+from app.storage.database import Database
 from app.storage.problem_repository import ProblemRepository
+from app.storage.usage_ledger import LedgeredProvider, UsageLedger
 
 logger = logging.getLogger("cpractice")
 
@@ -37,7 +40,7 @@ def _ensure_directories(settings: Settings) -> None:
     settings.database_file.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _build_generation_pipeline(settings: Settings) -> GenerationPipeline | None:
+def _build_generation_pipeline(settings: Settings, ledger: UsageLedger) -> GenerationPipeline | None:
     """Build the AI generation pipeline, or None when no provider is configured.
 
     The application must start without AI credentials: offline practice with
@@ -65,8 +68,11 @@ def _build_generation_pipeline(settings: Settings) -> GenerationPipeline | None:
         logger.warning("unknown AI provider %r; generation disabled", settings.ai_provider)
         return None
 
+    # Wrap so every call is recorded and the daily budget is enforced.
+    recorded = LedgeredProvider(provider, ledger, daily_budget=settings.ai_daily_request_budget)
+
     return GenerationPipeline(
-        provider,
+        recorded,
         problems_dir=settings.problems_path,
         cache=GenerationCache(settings.problems_path / ".cache"),
         retry_policy=RetryPolicy(
@@ -81,20 +87,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application startup/shutdown hooks."""
     settings: Settings = app.state.settings
     _ensure_directories(settings)
-    app.state.generation_pipeline = _build_generation_pipeline(settings)
+
+    database = Database(settings.database_file)
+    app.state.database = database
+    app.state.attempt_repository = AttemptRepository(database)
+    app.state.problem_index = ProblemIndex(database)
+    app.state.usage_ledger = UsageLedger(database)
+
+    # Index the problem packages that already exist on disk.
+    _sync_problem_index(app)
+
+    app.state.generation_pipeline = _build_generation_pipeline(settings, app.state.usage_ledger)
     # Reuse the pipeline's provider for hint generation; stored hints work
     # regardless, so this stays optional.
     provider = app.state.generation_pipeline.provider if app.state.generation_pipeline else None
     app.state.hint_service = HintService(provider)
     logger.info(
-        "CPractice %s started (provider=%s, compiler=%s, ai=%s)",
+        "CPractice %s started (provider=%s, compiler=%s, ai=%s, db=%s)",
         settings.app_version,
         settings.ai_provider,
         settings.cc_compiler,
         "enabled" if app.state.generation_pipeline else "disabled",
+        database.path.name,
     )
     yield
     logger.info("CPractice shutting down")
+
+
+def _sync_problem_index(app: FastAPI) -> None:
+    """Bring the problems table in step with the package directory."""
+    service: ProblemService = app.state.problem_service
+    index: ProblemIndex = app.state.problem_index
+
+    problems = service.list_problems()
+    paths = {
+        problem.id: str(service.repository.package_dir(problem.id)) for problem in problems
+    }
+    try:
+        index.sync(problems, paths)
+    except Exception as exc:  # pragma: no cover - index is a convenience
+        logger.warning("could not sync problem index: %s", exc)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -119,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(problems.router, prefix="/api")
     app.include_router(generation.router, prefix="/api")
     app.include_router(submissions.router, prefix="/api")
+    app.include_router(progress.router, prefix="/api")
 
     # --- Static frontend ---
     # Mounted last so it never shadows /api routes.

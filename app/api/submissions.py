@@ -6,6 +6,8 @@ so the problems module stays focused on read access.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -15,6 +17,8 @@ from app.feedback.hint_service import (
 )
 from app.services.submission_service import SubmissionError
 from app.storage.problem_repository import ProblemNotFoundError, ProblemValidationError
+
+logger = logging.getLogger("cpractice")
 
 router = APIRouter(prefix="/problems", tags=["submissions"])
 
@@ -65,6 +69,21 @@ def submit(request: Request, problem_id: str, body: SubmitRequest) -> dict:
     payload = outcome.payload
     payload["hints_used"] = body.hints_used
     payload["next_action"] = _next_action(outcome.report, problem, body.hints_used)
+
+    # Persist the attempt so history and progress reflect real usage.
+    try:
+        attempt_id = request.app.state.attempt_repository.record(
+            outcome.report,
+            problem_id=problem.id,
+            hints_used=body.hints_used,
+            verdict=payload["verdict"],
+        )
+        payload["attempt_id"] = attempt_id
+    except Exception as exc:  # pragma: no cover - history is best-effort
+        # A storage failure must not lose the grading result the learner needs.
+        logger.warning("could not record attempt: %s", exc)
+        payload["attempt_id"] = None
+
     return payload
 
 
