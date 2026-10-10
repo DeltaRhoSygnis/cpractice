@@ -54,6 +54,19 @@ def _problem_detail(problem: Problem, *, include_solution: bool = False) -> dict
         "max_hint_level": problem.max_hint_level,
     }
 
+    # Pedagogical framing, if the problem declares it. Author-only fields
+    # (the solution outline) are withheld so the intended approach is not
+    # disclosed before the learner attempts it.
+    if problem.pedagogy is not None:
+        pedagogy = problem.pedagogy
+        payload["pedagogy"] = {
+            "primary_objective": pedagogy.primary_objective,
+            "exercise_role": pedagogy.exercise_role.value,
+            "prerequisites": pedagogy.prerequisites,
+            "target_reasoning_moves": pedagogy.target_reasoning_moves,
+            "transfer_goal": pedagogy.transfer_goal,
+        }
+
     # Solution content is only included when explicitly requested.
     if include_solution:
         payload["solution_explanation"] = problem.solution_explanation

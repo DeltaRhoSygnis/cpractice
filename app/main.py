@@ -25,6 +25,7 @@ from app.feedback.hint_service import HintService
 from app.generation.pipeline import GenerationPipeline
 from app.services.adaptive_service import AdaptivePlanner
 from app.services.problem_service import ProblemService
+from app.services.sequencer import PracticeSequencer
 from app.services.submission_service import SubmissionService
 from app.storage.attempt_repository import AttemptRepository, ProblemIndex
 from app.storage.database import Database
@@ -98,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.problem_index = ProblemIndex(database)
     app.state.usage_ledger = UsageLedger(database)
     app.state.adaptive_planner = AdaptivePlanner()
+    app.state.practice_sequencer = PracticeSequencer()
 
     # Index the problem packages that already exist on disk.
     _sync_problem_index(app)
