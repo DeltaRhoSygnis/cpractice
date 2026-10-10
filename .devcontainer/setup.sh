@@ -56,5 +56,22 @@ else
   echo "    [i]  no .env yet - copy .env.example and add GOOGLE_API_KEY for AI features"
 fi
 
+# 5. Codespaces secrets. These are injected by GitHub only when the container
+#    is created/rebuilt AFTER the secret exists. We never print the values.
+echo "==> Codespaces secrets"
+check_secret() {
+  local name="$1" purpose="$2"
+  if [ -n "${!name:-}" ]; then
+    echo "    [ok] $name is set (${purpose})"
+  else
+    echo "    [!]  $name is NOT set (${purpose})"
+    echo "         -> GitHub > Settings > Codespaces > Secrets, then REBUILD the container."
+    echo "         -> Rebuild: Command Palette > 'Codespaces: Rebuild Container'"
+  fi
+}
+check_secret "KENARI_API_KEY" "OpenCode provider"
+check_secret "GEMINI_API_KEY" "Gemini / AI Studio"
+check_secret "GOOGLE_API_KEY" "alias of GEMINI_API_KEY for the app"
+
 echo "==> Setup complete. Start the app with:"
 echo "    uvicorn app.main:app --reload --host 127.0.0.1 --port 8000"
