@@ -24,10 +24,11 @@ workspaces/*
 !workspaces/.gitkeep
 *.log
 
-# --- Generated problem packages (keep the example) ---
+# --- Generated problem packages (keep the shipped example) ---
+# AI-generated problems are ignored; the hand-authored example is tracked.
 problems/*
-!problems/example-problem/
-problems/example-problem/quality_report.json
+!problems/c-sum-two-integers/
+problems/c-sum-two-integers/quality_report.json
 
 # --- OS / editor ---
 .DS_Store

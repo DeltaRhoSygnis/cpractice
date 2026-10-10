@@ -167,7 +167,7 @@ attempts, and hidden-data separation.
 
 - [x] M1 — Local application foundation
 - [x] M2 — Deterministic grading engine
-- [ ] M3 — Problem package contract
+- [x] M3 — Problem package contract
 - [ ] M4 — AI problem generation
 - [ ] M5 — Learning feedback
 
@@ -214,3 +214,36 @@ Verified by experiment and encoded in `app/grading/runner.py`:
 Consequence: crash detection must use **negative exit codes (signal death)**,
 never a heuristic over positive exit codes. A segfault is a runtime error
 regardless of the exit code a test expects.
+
+### M3 delivered
+
+| File | Purpose |
+|---|---|
+| `app/schemas/problem.py` | `ProblemMetadata`, `Problem`, `Hint`, difficulty/status enums, test-id and hint-level uniqueness |
+| `app/storage/problem_repository.py` | loads and validates packages from disk; rejects path traversal |
+| `app/services/problem_service.py` | application layer; derives grading config from metadata |
+| `app/api/problems.py` | `GET /api/problems`, `GET /api/problems/{id}` with safe views |
+| `problems/c-sum-two-integers/` | complete manual package: statement, starter, reference, 6 tests, 5 hints |
+
+**M3 done-when:** a manually authored package can be loaded, validated, and
+graded without AI involvement —
+`test_example_package_reference_passes_all_tests` and
+`test_example_package_starter_does_not_pass` prove both directions.
+
+#### Package layout
+
+```
+problems/<problem-id>/
+    problem.json          # metadata + tests + hints + solution_explanation
+    statement.md          # required
+    starter/main.c        # optional
+    reference/main.c      # optional until the quality gate runs
+    quality_report.json   # written by M4
+```
+
+#### Hidden-data rule
+
+The API response models are narrower than the internal schemas. Hidden tests
+expose **only `id` and `name`** - never `stdin` or `expected_stdout`. The
+reference solution is withheld unless explicitly requested. Verified by
+`test_hidden_test_content_is_never_exposed`.

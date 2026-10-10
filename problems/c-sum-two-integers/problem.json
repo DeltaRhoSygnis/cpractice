@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "id": "c-sum-two-integers",
+  "version": 1,
+  "title": "Sum of Two Integers",
+  "language": "c",
+  "difficulty": "beginner",
+  "topics": ["input-output", "arithmetic"],
+  "target_skills": [
+    "reading integers with scanf",
+    "printf formatting",
+    "return values"
+  ],
+  "compiler": {
+    "standard": "c11"
+  },
+  "entrypoint": "main.c",
+  "comparison": "exact_normalized",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 128,
+  "status": "validated",
+
+  "tests": [
+    {
+      "id": "basic-positive",
+      "name": "Two positive numbers",
+      "visibility": "public",
+      "stdin": "2 3\n",
+      "expected_stdout": "5\n",
+      "expected_exit_code": 0
+    },
+    {
+      "id": "with-negative",
+      "name": "One negative number",
+      "visibility": "public",
+      "stdin": "-4 1\n",
+      "expected_stdout": "-3\n",
+      "expected_exit_code": 0
+    },
+    {
+      "id": "zero-sum",
+      "name": "Sum is zero",
+      "visibility": "public",
+      "stdin": "7 -7\n",
+      "expected_stdout": "0\n",
+      "expected_exit_code": 0
+    },
+    {
+      "id": "both-zero",
+      "name": "Both inputs are zero",
+      "visibility": "hidden",
+      "stdin": "0 0\n",
+      "expected_stdout": "0\n",
+      "expected_exit_code": 0
+    },
+    {
+      "id": "large-values",
+      "name": "Large boundary values",
+      "visibility": "hidden",
+      "stdin": "1000000 2000000\n",
+      "expected_stdout": "3000000\n",
+      "expected_exit_code": 0
+    },
+    {
+      "id": "both-negative",
+      "name": "Both numbers negative",
+      "visibility": "hidden",
+      "stdin": "-8 -9\n",
+      "expected_stdout": "-17\n",
+      "expected_exit_code": 0
+    }
+  ],
+
+  "hints": [
+    {
+      "level": 1,
+      "text": "This problem is about reading input, doing one calculation, and printing the result."
+    },
+    {
+      "level": 2,
+      "text": "You need somewhere to store the two numbers before you add them. Variables of type int are a good fit."
+    },
+    {
+      "level": 3,
+      "text": "Check that your scanf call reads BOTH numbers. A common bug is reading only one, or forgetting the & before each variable."
+    },
+    {
+      "level": 4,
+      "text": "Declare two int variables. Read them with scanf(\"%d %d\", &a, &b). Print a + b with printf(\"%d\\n\", a + b). Return 0."
+    },
+    {
+      "level": 5,
+      "text": "See the reference solution for a complete implementation."
+    }
+  ],
+
+  "solution_explanation": "Read two integers from standard input and print their sum. The key details are reading both values with a single scanf and printing the newline that the expected output requires."
+}
