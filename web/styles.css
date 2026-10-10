@@ -96,13 +96,25 @@
   :root { --dur-1: 1ms; --dur-2: 1ms; --dur-3: 1ms; }
 }
 
+/* Users who asked the OS for more contrast get stronger hairlines and brighter
+   dim text, in both schemes. --border/--border-strong climb so the control
+   boundary and decorative line stay perceivable against the surface. */
+@media (prefers-contrast: more) {
+  :root { --text-dim: #c2c8d6; --border: #6b7690; --border-strong: #93a0bd; }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: light) {
+  :root { --text-dim: #333b49; --border: #b9bfcd; --border-strong: #6b7690; }
+}
+
 * { box-sizing: border-box; }
 
 html {
+  color-scheme: dark;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden; /* last-resort guard; long tokens are wrapped at source */
 }
+@media (prefers-color-scheme: light) { html { color-scheme: light; } }
 
 body {
   margin: 0;
@@ -115,11 +127,14 @@ body {
 }
 
 .skip-link {
-  position: absolute; left: -9999px; top: 0; z-index: 100;
-  background: var(--accent); color: var(--accent-ink); padding: .6rem 1rem;
-  border-radius: 0 0 var(--r-2) 0;
+  position: absolute; top: 0; left: var(--sp-3); z-index: 100;
+  transform: translateY(-120%);
+  background: var(--accent); color: var(--accent-ink);
+  padding: .7rem 1rem; border-radius: 0 0 var(--r-2) var(--r-2);
+  transition: transform var(--dur-1) var(--ease);
 }
-.skip-link:focus { left: 0; }
+.skip-link:focus { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) { .skip-link { transition: none; } }
 
 /* --- header (glass island #1 of 2) --- */
 .app-header {
@@ -157,6 +172,11 @@ body {
 /* --- layout --- */
 .app-main { max-width: 940px; margin: 0 auto; padding: var(--sp-5) var(--sp-4) var(--sp-10); }
 .app-main:focus { outline: none; }
+/* Focus lands here after route changes; only suppress the ring for the
+   programmatic focus, and show one if a keyboard user reaches it. */
+.app-main:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-3);
+}
 
 .card {
   background: var(--surface); border: 1px solid var(--border);
@@ -178,6 +198,40 @@ body {
 
 h1 { font-size: 1.375rem; margin: 0 0 var(--sp-1); letter-spacing: -.015em; }
 .subtitle { color: var(--text-dim); margin: 0 0 var(--sp-5); font-size: .9rem; }
+
+/* --- card content (statements render real markdown: p/ul/h3/code) --- */
+.card h3 {
+  font-size: .95rem; font-weight: 650; margin: var(--sp-4) 0 var(--sp-2);
+  letter-spacing: -.01em;
+}
+.card p { margin: 0 0 var(--sp-3); text-wrap: pretty; }
+.card ul { margin: 0 0 var(--sp-3); padding-left: 1.1rem; }
+.card li { margin-bottom: var(--sp-1); }
+.card code, .statement code {
+  font-family: var(--mono); font-size: .85em;
+  background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: .05em .35em;
+}
+.card pre {
+  font-family: var(--mono); font-size: .8rem; line-height: 1.55;
+  background: var(--code-bg); border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r-2); padding: var(--sp-3);
+  overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.code-figure { margin: 0; min-width: 0; }
+.caption { display: block; font-size: .8125rem; color: var(--text-dim); margin-bottom: var(--sp-1); font-weight: 500; }
+
+.next-action {
+  margin: 0 0 var(--sp-3); padding: .6rem .85rem;
+  border-left: 3px solid var(--accent); background: var(--surface-2);
+  border-radius: 0 var(--r-2) var(--r-2) 0; font-size: .9rem;
+}
+.ladder-status { margin: 0 0 var(--sp-3); }
+.tabular { font-variant-numeric: tabular-nums; }
+.disclosure { margin-top: var(--sp-2); }
+.disclosure > summary { cursor: pointer; color: var(--text-dim); font-size: .85rem; }
+.disclosure[open] > summary { margin-bottom: var(--sp-2); }
 
 /* --- forms --- */
 label { display: block; font-size: .8125rem; color: var(--text-dim); margin-bottom: var(--sp-1); font-weight: 500; }
@@ -219,10 +273,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 /* --- status list --- */
 .status-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
 .status-line {
-  display: flex; align-items: baseline; gap: var(--sp-2); background: var(--surface-2);
-  border-radius: var(--r-1); padding: .45rem .6rem; font-family: var(--mono); font-size: .8125rem;
+  display: flex; align-items: center; gap: var(--sp-2); background: var(--surface-2);
+  border-radius: var(--r-1); padding: .45rem .6rem; font-size: .85rem;
 }
-.status-icon { flex: 0 0 1.1em; text-align: center; font-weight: 700; }
+.status-icon {
+  flex: 0 0 1.2em; text-align: center; line-height: 1;
+  font-family: var(--mono); font-weight: 700;
+}
 .status-line--ok .status-icon { color: var(--ok); }
 .status-line--warn .status-icon { color: var(--warn); }
 .status-line--fail .status-icon { color: var(--fail); }
@@ -246,6 +303,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   display: inline-block; font-size: .72rem; padding: .12rem .5rem;
   border-radius: var(--r-1); border: 1px solid var(--border); color: var(--text-dim);
   font-family: var(--mono); max-width: 100%; overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 .badge--ok { color: var(--ok); border-color: currentColor; }
 .badge--fail { color: var(--fail); border-color: currentColor; }
@@ -261,13 +319,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 }
 .test-row--pass { border-left-color: var(--ok); }
 .test-row--fail { border-left-color: var(--fail); }
-.test-row__icon { flex: 0 0 1.2em; font-weight: 700; }
+.test-row__icon { flex: 0 0 1.2em; font-weight: 700; text-align: center; line-height: 1; }
 .test-row--pass .test-row__icon { color: var(--ok); }
 .test-row--fail .test-row__icon { color: var(--fail); }
 .test-row__body { min-width: 0; }
-.test-row__name { font-weight: 600; overflow-wrap: anywhere; }
+.test-row__name { font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .test-row__detail { color: var(--text-dim); font-family: var(--mono); font-size: .78rem;
-  overflow-wrap: anywhere; white-space: pre-wrap; }
+  overflow-wrap: anywhere; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
 .test-row__hidden { color: var(--text-dim); font-style: italic; }
 
 /* --- result banner --- */
@@ -275,6 +333,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   display: flex; align-items: center; gap: var(--sp-2); padding: .7rem .85rem;
   border-radius: var(--r-2); border: 1px solid var(--border);
   border-left-width: 3px; margin-bottom: var(--sp-3); font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .verdict--pass { border-color: var(--ok); border-left-color: var(--ok); background: rgba(155, 211, 90, .08); background: color-mix(in srgb, var(--ok) 8%, transparent); }
 .verdict--fail { border-color: var(--fail); border-left-color: var(--fail); background: rgba(255, 107, 129, .08); background: color-mix(in srgb, var(--fail) 8%, transparent); }
@@ -284,10 +343,18 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 
 pre.diagnostics {
   margin: .6rem 0 0; padding: var(--sp-3); background: var(--code-bg);
-  border: 1px solid var(--border); border-radius: var(--r-2); overflow-x: auto;
+  border: 1px solid var(--border); border-radius: var(--r-2);
+  overflow: auto;
   font-family: var(--mono); font-size: .78rem; white-space: pre-wrap;
   overflow-wrap: anywhere; max-height: 22rem;
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
 }
+pre.diagnostics::-webkit-scrollbar { height: 10px; width: 10px; }
+pre.diagnostics::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: var(--r-full);
+  border: 3px solid transparent; background-clip: content-box;
+}
+pre.diagnostics::-webkit-scrollbar-track { background: transparent; }
 
 /* --- hints --- */
 .hint-box {
@@ -300,6 +367,7 @@ pre.diagnostics {
 .hint-step {
   width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center;
   font-size: .75rem; font-family: var(--mono); border: 1px solid var(--border); color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 .hint-step--used { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .hint-step--next { border-color: var(--accent); color: var(--accent-text); }
@@ -338,9 +406,25 @@ pre.diagnostics {
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
   backdrop-filter: blur(12px) saturate(1.2);
   border: 1px solid var(--border); border-left-width: 3px;
-  border-radius: var(--r-4); padding: .65rem .85rem; font-size: .85rem;
+  border-radius: var(--r-3); padding: .65rem .85rem; font-size: .85rem;
   box-shadow: var(--e-2);
   display: flex; gap: var(--sp-2); align-items: baseline;
+  font-variant-numeric: tabular-nums;
+  animation: toast-in var(--dur-2) var(--ease) both;
+}
+.toast--leaving { animation: toast-out var(--dur-1) var(--ease) both; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(4px); }
+}
+/* Declared after the base animation so source order lets it win: the toast
+   enter/exit is decorative, and the JS 200ms fallback still removes the node. */
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast--leaving { animation: none; }
 }
 .toast__icon { font-weight: 700; flex: 0 0 auto; }
 .toast--ok { border-left-color: var(--ok); }
@@ -350,7 +434,34 @@ pre.diagnostics {
 .toast--warn { border-left-color: var(--warn); }
 .toast--warn .toast__icon { color: var(--warn); }
 
+/* Glass is progressive enhancement. Without backdrop-filter, a translucent
+   surface over moving content would hurt legibility, so fall back to opaque. */
+@supports not (backdrop-filter: blur(1px)) {
+  .app-header, .toast { background: var(--surface); }
+}
+
+/* Windows High Contrast / forced-colors strips author colours, so anything
+   currently carried by colour alone (pass/fail tint, hint ladder state) must
+   gain a shape or a system-colour channel. */
+@media (forced-colors: active) {
+  .app-header { border-bottom: 1px solid CanvasText; }
+  .test-row--pass, .test-row--fail, .verdict--pass, .verdict--fail { border: 1px solid CanvasText; border-left-width: 3px; }
+  .test-row--pass { border-left-style: solid; }
+  .test-row--fail { border-left-style: double; }
+  .hint-step--used { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .hint-step--next { border: 2px solid CanvasText; }
+  .skip-link:focus { background: Highlight; color: HighlightText; }
+}
+
 /* --- mobile --- */
+@media (max-width: 600px) {
+  /* Touch-oriented layout concerns start here, not at the narrower 480px
+     breakpoint: 16px inputs stop iOS focus-zoom, and 44px nav targets are the
+     minimum comfortable hit area on any phone-sized viewport. */
+  input, select, textarea { font-size: 16px; }
+  textarea { resize: none; height: 15.5rem; }
+  .nav a { min-height: 44px; }
+}
 @media (max-width: 480px) {
   /* Drop the glass on phones: it is the most expensive paint we could ask for,
      and a full-width island with wrapping nav is what overflows. */
@@ -358,6 +469,9 @@ pre.diagnostics {
   .app-header__inner { padding: var(--sp-2) var(--sp-4); }
   .nav { width: 100%; }
   .nav a { flex: 1 1 auto; justify-content: center; }
+  /* Two-up stats read better than a ragged auto-fit on the narrowest screens. */
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat { padding: var(--sp-3); }
   .card { padding: var(--sp-4); }
   h1 { font-size: 1.25rem; }
   pre.diagnostics, .test-row__detail { font-size: .75rem; }
