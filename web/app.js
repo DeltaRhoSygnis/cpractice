@@ -163,7 +163,12 @@ views.dashboard = async () => {
   generateBtn.addEventListener("click", async () => {
     generateBtn.disabled = true;
     generateBtn.textContent = "Generating…";
-    generateOut.replaceChildren();
+    generateOut.replaceChildren(
+      el("p", { class: "small muted" }, [
+        el("span", { class: "spinner", "aria-hidden": "true" }),
+        " Asking the model, then compiling and testing the reference. This can take ~30s.",
+      ]),
+    );
     try {
       const result = await api.generate({
         topic: topic.value.trim() || "loops",
@@ -172,7 +177,7 @@ views.dashboard = async () => {
       if (result.accepted) {
         toast(`Generated and validated: ${result.problem_id}`, "ok");
         const ref = result.reference;
-        generateOut.append(
+        generateOut.replaceChildren(
           el("div", { class: "verdict verdict--pass" }, [
             el("span", { class: "verdict__icon", "aria-hidden": "true", text: "✔" }),
             el("span", {
@@ -184,8 +189,11 @@ views.dashboard = async () => {
                       text: "Open the problem →" }),
           ]),
         );
+        // The new problem changes recommendations and the problem list, so
+        // refresh both rather than leaving stale content on screen.
+        await Promise.all([refreshProblems(), refreshRecommendations()]);
       } else {
-        generateOut.append(
+        generateOut.replaceChildren(
           el("div", { class: "verdict verdict--fail" }, [
             el("span", { class: "verdict__icon", "aria-hidden": "true", text: "✘" }),
             el("span", { text: "Rejected by the quality gate" }),
@@ -202,7 +210,7 @@ views.dashboard = async () => {
         );
       }
     } catch (error) {
-      generateOut.append(errorCard(error.message));
+      generateOut.replaceChildren(errorCard(error.message));
       toast(error.message, "fail");
     } finally {
       generateBtn.disabled = false;
@@ -225,8 +233,83 @@ views.dashboard = async () => {
   const recCard = el("div", { class: "card" }, [el("h2", { text: "Recommended next" })]);
   container.append(recCard);
 
+  const problemsCard = el("div", { class: "card" }, [el("h2", { text: "Your problems" })]);
+  container.append(problemsCard);
+
   const recentCard = el("div", { class: "card" }, [el("h2", { text: "Recent attempts" })]);
   container.append(recentCard);
+
+  // --- refreshable loaders -------------------------------------------------
+  // Kept as named functions so generating a problem can refresh the affected
+  // lists instead of leaving stale content on screen.
+
+  async function refreshRecommendations() {
+    recCard.replaceChildren(el("h2", { text: "Recommended next" }));
+    try {
+      const data = await api.recommendations();
+      if (!data.count) {
+        recCard.append(emptyState(
+          data.evidence_based === false
+            ? "No suggestions yet. Generate or pick a problem to begin."
+            : "Nothing new to recommend right now.",
+        ));
+        return;
+      }
+      const list = el("ul", { class: "problem-list" });
+      for (const rec of data.recommendations) {
+        list.append(
+          el("li", { class: "problem-item" }, [
+            el("a", { href: `#/problem/${encodeURIComponent(rec.problem_id)}` }, [
+              el("div", { class: "problem-item__title", text: rec.title }),
+              el("div", { class: "problem-item__meta", text: rec.reason }),
+              el("div", { class: "problem-item__meta" }, [
+                el("span", {
+                  class: `badge ${rec.exploratory ? "" : "badge--info"}`,
+                  text: rec.exploratory ? "breadth suggestion" : "targets a weakness",
+                }),
+              ]),
+            ]),
+          ]),
+        );
+      }
+      recCard.append(list);
+    } catch (error) {
+      recCard.append(emptyState(`Could not load recommendations: ${error.message}`));
+    }
+  }
+
+  async function refreshProblems() {
+    problemsCard.replaceChildren(el("h2", { text: "Your problems" }));
+    try {
+      const data = await api.listProblems();
+      if (!data.count) {
+        problemsCard.append(emptyState("No problems saved yet. Generate one above."));
+        return;
+      }
+      const list = el("ul", { class: "problem-list" });
+      for (const problem of data.problems) {
+        list.append(
+          el("li", { class: "problem-item" }, [
+            el("a", { href: `#/problem/${encodeURIComponent(problem.id)}` }, [
+              el("div", { class: "problem-item__title", text: problem.title }),
+              el("div", { class: "problem-item__meta", text:
+                `${problem.difficulty} · ${problem.test_count} tests · ` +
+                `${(problem.topics || []).join(", ")}` }),
+              el("div", { class: "problem-item__meta" }, [
+                el("span", {
+                  class: `badge ${problem.status === "validated" ? "badge--ok" : "badge--warn"}`,
+                  text: problem.status,
+                }),
+              ]),
+            ]),
+          ]),
+        );
+      }
+      problemsCard.append(list);
+    } catch (error) {
+      problemsCard.append(emptyState(`Could not load problems: ${error.message}`));
+    }
+  }
 
   // Data loading, independent so one failure does not blank the page.
   api.health().then((health) => {
@@ -250,30 +333,8 @@ views.dashboard = async () => {
     statusList.replaceChildren(statusLine("fail", `Backend unreachable — ${error.message}`));
   });
 
-  api.recommendations().then((data) => {
-    if (!data.count) {
-      recCard.append(emptyState("No suggestions yet. Generate or pick a problem to begin."));
-      return;
-    }
-    const list = el("ul", { class: "problem-list" });
-    for (const rec of data.recommendations) {
-      list.append(
-        el("li", { class: "problem-item" }, [
-          el("a", { href: `#/problem/${encodeURIComponent(rec.problem_id)}` }, [
-            el("div", { class: "problem-item__title", text: rec.title }),
-            el("div", { class: "problem-item__meta", text: rec.reason }),
-            el("div", { class: "problem-item__meta" }, [
-              el("span", {
-                class: `badge ${rec.exploratory ? "" : "badge--info"}`,
-                text: rec.exploratory ? "breadth suggestion" : "targets a weakness",
-              }),
-            ]),
-          ]),
-        ]),
-      );
-    }
-    recCard.append(list);
-  }).catch(() => recCard.append(emptyState("Could not load recommendations.")));
+  refreshRecommendations();
+  refreshProblems();
 
   api.attempts(5).then((data) => {
     if (!data.count) {
@@ -281,7 +342,7 @@ views.dashboard = async () => {
       return;
     }
     recentCard.append(attemptTable(data.attempts));
-  }).catch(() => recentCard.append(emptyState("Could not load attempts.")));
+  }).catch((error) => recentCard.append(emptyState(`Could not load attempts: ${error.message}`)));
 
   return container;
 };
