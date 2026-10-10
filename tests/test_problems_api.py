@@ -118,3 +118,41 @@ def test_empty_problems_dir_returns_empty_list(tmp_path: Path) -> None:
         body = client.get("/api/problems").json()
 
     assert body == {"count": 0, "problems": []}
+
+
+def test_pedagogy_is_exposed_but_the_outline_is_withheld(tmp_path: Path) -> None:
+    """The learner sees the objective and role, never the intended approach."""
+    import json as _json
+
+    problems_dir = tmp_path / "problems"
+    package = problems_dir / "with-pedagogy"
+    (package / "starter").mkdir(parents=True)
+    (package / "statement.md").write_text("# P")
+    (package / "problem.json").write_text(_json.dumps({
+        "id": "with-pedagogy",
+        "title": "With Pedagogy",
+        "tests": [{"id": "a", "name": "A", "stdin": "1\n", "expected_stdout": "1\n"}],
+        "pedagogy": {
+            "primary_objective": "derive loop bounds",
+            "exercise_role": "core_reasoning",
+            "prerequisites": ["for_loops"],
+            "target_reasoning_moves": ["derive the upper bound", "check the boundary"],
+            "solution_outline": "SECRET-INTENDED-APPROACH",
+        },
+    }))
+
+    settings = Settings(
+        _env_file=None,
+        database_path=tmp_path / "data" / "cpractice.db",
+        problems_dir=problems_dir,
+        workspaces_dir=tmp_path / "workspaces",
+    )
+    with TestClient(create_app(settings)) as client:
+        body = client.get("/api/problems/with-pedagogy").json()
+
+    assert body["pedagogy"]["primary_objective"] == "derive loop bounds"
+    assert body["pedagogy"]["exercise_role"] == "core_reasoning"
+    assert body["pedagogy"]["target_reasoning_moves"]
+    # The author-only outline must not leak.
+    assert "solution_outline" not in body["pedagogy"]
+    assert "SECRET-INTENDED-APPROACH" not in str(body)

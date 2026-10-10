@@ -19,6 +19,7 @@ from app.ai.base import (
 )
 from app.generation.pipeline import GenerationError
 from app.generation.prompts import GenerationRequest
+from app.schemas.pedagogy import ExerciseRole
 
 router = APIRouter(prefix="/problems", tags=["generation"])
 
@@ -33,6 +34,15 @@ class GenerateRequest(BaseModel):
     forbidden: list[str] = Field(default_factory=list, max_length=10)
     hints_enabled: bool = True
     use_cache: bool = True
+    #: Which role the exercise should play in the practice sequence.
+    exercise_role: str = Field(
+        default="core_reasoning",
+        pattern=(
+            "^(diagnostic_warmup|core_reasoning|transfer|challenge|debugging|reflection)$"
+        ),
+    )
+    #: Concepts the learner already knows; nothing else is required.
+    prerequisites: list[str] = Field(default_factory=list, max_length=12)
 
 
 @router.post("/generate")
@@ -58,7 +68,12 @@ def generate_problem(request: Request, body: GenerateRequest) -> dict:
     )
 
     try:
-        outcome = pipeline.generate(generation_request, use_cache=body.use_cache)
+        outcome = pipeline.generate(
+            generation_request,
+            use_cache=body.use_cache,
+            exercise_role=ExerciseRole(body.exercise_role),
+            prerequisites=body.prerequisites,
+        )
     except AuthError as exc:
         raise HTTPException(status_code=502, detail=f"AI authentication failed: {exc}") from exc
     except RateLimitError as exc:

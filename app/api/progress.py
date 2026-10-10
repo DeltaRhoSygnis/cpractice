@@ -70,13 +70,16 @@ def progress(request: Request) -> dict:
 def recommendations(
     request: Request,
     limit: int = Query(default=3, ge=1, le=10),
+    skill: str | None = Query(default=None, max_length=64),
 ) -> dict:
     """Suggest next exercises, driven by recorded evidence.
 
     Weakness-based when history supports it; explicitly labelled as exploratory
-    otherwise, so the difference is never hidden.
+    otherwise, so the difference is never hidden. A ``skill`` query parameter
+    targets a specific skill instead.
     """
     planner = request.app.state.adaptive_planner
+    sequencer = request.app.state.practice_sequencer
     plans = request.app.state.problem_service.list_problems()
     attempts = request.app.state.attempt_repository.recent(limit=200)
 
@@ -88,6 +91,15 @@ def recommendations(
         )
     }
 
+    problems_by_id = {p.id: p for p in plans}
+
+    # The sequencer decides *what shape* the next exercise should be.
+    sequence = sequencer.next_exercise(
+        attempts=attempts,
+        problems_by_id=problems_by_id,
+        requested_skill=skill,
+    )
+
     results = planner.recommend(
         problems=plans, attempts=attempts, solved_problem_ids=solved, limit=limit
     )
@@ -95,6 +107,13 @@ def recommendations(
     return {
         "count": len(results),
         "evidence_based": any(not r.exploratory for r in results),
+        "next": {
+            "skill": sequence.skill_tag,
+            "role": sequence.role.value,
+            "reason": sequence.reason.value,
+            "explanation": sequence.explanation,
+            "evidence": sequence.evidence,
+        },
         "recommendations": [
             {
                 "problem_id": r.problem_id,
@@ -106,6 +125,34 @@ def recommendations(
                 "evidence": r.evidence,
             }
             for r in results
+        ],
+    }
+
+
+@router.get("/curriculum")
+def curriculum(request: Request) -> dict:
+    """The C stage map and the operational skill definitions."""
+    from app.services.curriculum import SKILLS, STAGES
+
+    return {
+        "stages": [
+            {
+                "index": s.index,
+                "name": s.name,
+                "concepts": list(s.concepts),
+                "reasoning_practice": s.reasoning_practice,
+            }
+            for s in STAGES
+        ],
+        "skills": [
+            {
+                "tag": skill.tag,
+                "name": skill.name,
+                "stage": skill.stage,
+                # What observable performance demonstrates the skill.
+                "demonstrates": list(skill.demonstrates),
+            }
+            for skill in SKILLS.values()
         ],
     }
 

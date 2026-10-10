@@ -92,3 +92,43 @@ def test_recommendations_are_unique(tmp_path: Path) -> None:
 
     ids = [r["problem_id"] for r in body["recommendations"]]
     assert len(ids) == len(set(ids))
+
+
+# --- sequencing and curriculum --------------------------------------------
+
+
+def test_recommendations_include_a_next_exercise_shape(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        body = client.get("/api/recommendations").json()
+
+    assert "next" in body
+    assert body["next"]["role"]
+    assert body["next"]["reason"]
+    assert body["next"]["explanation"]
+
+
+def test_next_exercise_defaults_to_core_reasoning_without_history(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        body = client.get("/api/recommendations").json()
+
+    assert body["next"]["role"] == "core_reasoning"
+    assert body["next"]["reason"] == "no_evidence"
+
+
+def test_recommendations_accept_a_skill_parameter(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        body = client.get("/api/recommendations?skill=array_traversal").json()
+
+    assert body["next"]["skill"] == "array_traversal"
+
+
+def test_curriculum_endpoint_exposes_stages_and_skills(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        body = client.get("/api/curriculum").json()
+
+    assert len(body["stages"]) >= 10
+    assert body["stages"][0]["index"] == 0
+    assert body["skills"]
+    # Every skill must state observable evidence, not just a label.
+    for skill in body["skills"]:
+        assert skill["demonstrates"], f"{skill['tag']} has no observable definition"
