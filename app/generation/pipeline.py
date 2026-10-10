@@ -19,6 +19,7 @@ deterministic quality gate.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +43,9 @@ from app.schemas.test_case import TestCase
 
 class GenerationError(RuntimeError):
     """Raised when a problem cannot be generated or does not pass the gate."""
+
+
+logger = logging.getLogger("cpractice")
 
 
 @dataclass
@@ -172,12 +176,20 @@ class GenerationPipeline:
         """
         payload = normalize_payload(payload)
 
+        # Normalisation must never silently change the test set. Any dropped
+        # test is surfaced; a problem whose test count shifted is not accepted
+        # without the caller being able to see why.
+        notes = payload.pop("normalization_notes", [])
+
         # A payload with no tests is structurally incomplete. The schema allows
         # an empty list (a problem may be authored incrementally), so the
         # pipeline — which must only ever accept complete generated packages —
         # enforces the stronger requirement here.
         if not payload.get("tests"):
             raise GenerationError("generated payload contains no tests")
+
+        if notes:
+            logger.warning("normalisation notes for generated problem: %s", "; ".join(notes))
 
         metadata_raw = {k: v for k, v in payload.items() if k not in CONTENT_KEYS}
 

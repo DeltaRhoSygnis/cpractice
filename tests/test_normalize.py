@@ -332,3 +332,57 @@ def test_entirely_non_dict_test_list_yields_no_tests() -> None:
     out = normalize_payload({"id": "x", "title": "T", "tests": ["a", "b"]})
 
     assert out["tests"] == []
+
+
+# --- test-count invariants (adversarial review finding) --------------------
+
+
+def test_duplicate_ids_are_dropped_and_reported() -> None:
+    """A merged public/hidden list can repeat a test; the loss must be visible.
+
+    Raised by council review: silently changing the test set looks like success
+    because the reference still compiles and passes.
+    """
+    out = normalize_payload({
+        "id": "x", "title": "T",
+        "tests": [{"id": "same", "name": "Public", "visibility": "public",
+                   "stdin": "1", "expected_stdout": "1"}],
+        "hidden_tests": [{"id": "same", "name": "Hidden",
+                          "stdin": "2", "expected_stdout": "2"}],
+    })
+
+    assert len(out["tests"]) == 1
+    assert out["normalization_notes"]
+    assert "same" in out["normalization_notes"][0]
+
+
+def test_first_occurrence_wins_on_duplicate_id() -> None:
+    out = normalize_payload({
+        "id": "x", "title": "T",
+        "tests": [{"id": "same", "name": "First", "visibility": "public",
+                   "stdin": "1", "expected_stdout": "1"}],
+        "hidden_tests": [{"id": "same", "name": "Second",
+                          "stdin": "2", "expected_stdout": "2"}],
+    })
+
+    assert out["tests"][0]["name"] == "First"
+
+
+def test_no_notes_when_nothing_was_dropped() -> None:
+    out = normalize_payload({
+        "id": "x", "title": "T",
+        "tests": [
+            {"id": "a", "name": "A", "stdin": "1", "expected_stdout": "1"},
+            {"id": "b", "name": "B", "stdin": "2", "expected_stdout": "2"},
+        ],
+    })
+
+    assert "normalization_notes" not in out
+    assert len(out["tests"]) == 2
+
+
+def test_notes_are_not_left_in_the_payload_as_metadata() -> None:
+    """The notes key is transport, not schema content."""
+    from app.schemas.problem import CONTENT_KEYS
+
+    assert "normalization_notes" not in CONTENT_KEYS

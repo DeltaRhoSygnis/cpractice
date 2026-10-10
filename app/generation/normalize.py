@@ -96,11 +96,19 @@ def slugify(value: str, *, max_length: int = 48) -> str:
 
 
 def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of ``payload`` in the canonical package shape."""
+    """Return a copy of ``payload`` in the canonical package shape.
+
+    Normalisation is intentionally conservative: it maps field-name variants and
+    coerces types, but it **must not silently change the test set**. Tests are
+    de-duplicated by id (first occurrence wins) and any loss is recorded in a
+    ``normalization_notes`` list so a caller can assert on it rather than trust
+    that nothing was dropped.
+    """
     if not isinstance(payload, dict):
         return payload
 
     out: dict[str, Any] = dict(payload)
+    notes: list[str] = []
 
     # --- statement -------------------------------------------------------
     if not out.get("statement_md"):
@@ -114,7 +122,13 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     # Always overwrite: if the list contained only unusable entries, the
     # original must not survive, or validation would fail on junk.
     if _has_any_test_source(out):
-        out["tests"] = _collect_tests(out)
+        collected = _collect_tests(out)
+        deduped, dropped = _deduplicate_tests(collected)
+        if dropped:
+            notes.append(
+                f"dropped {dropped} duplicate test id(s): {sorted(dropped)}"
+            )
+        out["tests"] = deduped
 
     # --- topics: accept a string or a list -------------------------------
     out["topics"] = _as_string_list(out.get("topics") or out.get("topic"))
@@ -162,11 +176,40 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     # Models routinely emit helpful extras (``input_format``, ``notes``, ...).
     # They are folded into the statement above, so the structured payload keeps
     # only keys the schemas accept.
-    return {
+    cleaned = {
         key: value
         for key, value in out.items()
         if key in _KNOWN_METADATA_KEYS or key in _KNOWN_CONTENT_KEYS
     }
+
+    # Record what normalisation changed so callers can assert rather than trust.
+    if notes:
+        cleaned["normalization_notes"] = notes
+
+    return cleaned
+
+
+def _deduplicate_tests(tests: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Drop tests sharing an id, keeping the first occurrence.
+
+    Returns the surviving tests and the ids that were dropped. Duplicate ids are
+    otherwise fatal at schema validation, and a merged public/hidden list can
+    legitimately contain the same test twice - dropping the later copy is the
+    only lossless resolution, but it must be *visible*.
+    """
+    seen: set[str] = set()
+    kept: list[dict[str, Any]] = []
+    dropped: list[str] = []
+
+    for test in tests:
+        test_id = test.get("id")
+        if test_id in seen:
+            dropped.append(str(test_id))
+            continue
+        seen.add(test_id)
+        kept.append(test)
+
+    return kept, dropped
 
 
 def _augment_statement(payload: dict[str, Any]) -> str:

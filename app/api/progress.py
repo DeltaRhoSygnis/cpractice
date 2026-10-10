@@ -66,6 +66,50 @@ def progress(request: Request) -> dict:
     return request.app.state.attempt_repository.progress()
 
 
+@router.get("/recommendations")
+def recommendations(
+    request: Request,
+    limit: int = Query(default=3, ge=1, le=10),
+) -> dict:
+    """Suggest next exercises, driven by recorded evidence.
+
+    Weakness-based when history supports it; explicitly labelled as exploratory
+    otherwise, so the difference is never hidden.
+    """
+    planner = request.app.state.adaptive_planner
+    plans = request.app.state.problem_service.list_problems()
+    attempts = request.app.state.attempt_repository.recent(limit=200)
+
+    solved = {
+        problem.id
+        for problem in plans
+        if any(
+            a.problem_id == problem.id and a.succeeded for a in attempts
+        )
+    }
+
+    results = planner.recommend(
+        problems=plans, attempts=attempts, solved_problem_ids=solved, limit=limit
+    )
+
+    return {
+        "count": len(results),
+        "evidence_based": any(not r.exploratory for r in results),
+        "recommendations": [
+            {
+                "problem_id": r.problem_id,
+                "title": r.title,
+                "difficulty": r.difficulty,
+                "topics": r.topics,
+                "reason": r.reason,
+                "exploratory": r.exploratory,
+                "evidence": r.evidence,
+            }
+            for r in results
+        ],
+    }
+
+
 @router.get("/usage")
 def usage(request: Request) -> dict:
     """Report AI provider usage and remaining daily budget."""
