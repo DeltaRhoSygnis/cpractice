@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from app.grading.evaluator import Evaluator, GradingConfig
+from app.generation.mutation import MutationTester, mutation_finding
 from app.schemas.grading import ResultCategory
 from app.schemas.problem import Problem, ProblemStatus
 from app.schemas.test_case import Visibility
@@ -60,6 +61,8 @@ class QualityReport:
     reference_compiled: bool = False
     reference_passed: int = 0
     reference_total: int = 0
+    #: Mutation testing result, when it ran.
+    mutation: dict | None = None
 
     @property
     def errors(self) -> list[Finding]:
@@ -81,6 +84,7 @@ class QualityReport:
             "reference_compiled": self.reference_compiled,
             "reference_passed": self.reference_passed,
             "reference_total": self.reference_total,
+            "mutation": self.mutation,
             "findings": [f.to_dict() for f in self.findings],
         }
 
@@ -88,8 +92,14 @@ class QualityReport:
 class QualityGate:
     """Validates generated or loaded problems before publication."""
 
-    def __init__(self, evaluator: Evaluator | None = None) -> None:
+    def __init__(
+        self,
+        evaluator: Evaluator | None = None,
+        *,
+        mutation_enabled: bool = True,
+    ) -> None:
         self.evaluator = evaluator or Evaluator()
+        self.mutation_tester = MutationTester(self.evaluator, enabled=mutation_enabled)
 
     def check(self, problem: Problem) -> QualityReport:
         """Run every structural and behavioural check."""
@@ -98,6 +108,11 @@ class QualityGate:
         self._check_structure(problem, report)
         self._check_resource_limits(problem, report)
         self._check_reference(problem, report)
+
+        # Only worth mutating once the reference is known to compile and pass;
+        # otherwise every mutant would fail for the same underlying reason.
+        if report.reference_compiled and not report.errors:
+            self._check_mutations(problem, report)
 
         return report
 
@@ -270,6 +285,33 @@ class QualityGate:
                     Severity.ERROR,
                 )
             )
+
+    # -- mutation testing --------------------------------------------------
+
+    def _check_mutations(self, problem: Problem, report: QualityReport) -> None:
+        """Check the tests actually discriminate a correct solution.
+
+        This is the answer to the circularity of "the reference passes the
+        tests": deliberately wrong variants of the reference are run, and any
+        that pass every test prove the tests are too weak to notice.
+        """
+        mutation = self.mutation_tester.test(problem)
+
+        # Nothing was testable (e.g. no mutants could be generated): report
+        # "did not run" rather than implying a clean result.
+        if not self.mutation_tester.enabled or mutation.total_tested == 0 and not mutation.not_compiled:
+            report.mutation = None
+            return
+
+        report.mutation = mutation.to_dict()
+
+        finding = mutation_finding(mutation, problem)
+        if finding is None:
+            return
+
+        code, message = finding
+        severity = Severity.ERROR if code == "weak-tests" else Severity.WARNING
+        report.findings.append(Finding(code, message, severity))
 
 
 def apply_status(problem: Problem, report: QualityReport) -> Problem:

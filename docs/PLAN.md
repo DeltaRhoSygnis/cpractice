@@ -474,3 +474,63 @@ Confirmed and fixed: duplicate test ids are now de-duplicated deterministically
 (first occurrence wins) and the loss is recorded in `normalization_notes`,
 which the pipeline logs and removes before schema validation. Regression tests
 added.
+
+### M8 (redefined) — Test discrimination via mutation testing
+
+**Scope change.** The original M8 was "hosted deployment readiness". That is
+dropped: CPractice is not being hosted, and the spec already states the local
+runner is not a security boundary. The milestone is replaced with the highest
+value item identified by council review.
+
+**Why.** A reference implementation passing its generated tests proves
+*consistency*, not *correctness*: a wrong reference with matching wrong tests
+passes the gate cleanly. The gate alone had no instrument to detect this. The
+spec names mutation testing as the mitigation ("weak tests that allow obvious
+incorrect variants to pass").
+
+| File | Purpose |
+|---|---|
+| `app/generation/mutation.py` | C mutation operators, mutant execution, mutation report |
+| `app/generation/quality_gate.py` | runs mutation testing after the reference passes |
+
+#### Method
+
+Mutants are small, text-based variants of the reference targeting bugs a
+beginner actually makes (addition -> subtraction, `<` -> `<=`, dropped loop
+increment). Each is run against the problem's own tests:
+
+* a mutant that **fails a test** is **killed** - the tests detect that bug;
+* a mutant that **passes every test** **survives** - the tests cannot tell it
+  apart from a correct solution.
+
+`mutation_score = killed / (killed + survived)`. Invalid mutants (which fail to
+compile) are excluded: the compiler trivially rejects them, which says nothing
+about whether the tests discriminate.
+
+#### Two false-positive sources, both handled
+
+1. **Equivalent mutants.** Removing `return 0;` from `main` is *not* a mutation:
+   C99 implies it, so the program behaves identically and the mutant would
+   survive for every problem. That operator was removed. (Verified by compiling
+   the variant and checking the exit status.)
+2. **Comparison-mode artefacts.** Under `exact_normalized` a missing final
+   newline is invisible *by design*. Reporting that survivor would flag every
+   problem using the mode correctly, so mutants explained by the problem's own
+   comparison mode are excluded from findings while remaining visible in the
+   raw report.
+
+#### Findings
+
+* `weak-tests` (**error**) when the problem has enough tests to be meaningful.
+* `possibly-weak-tests` (**warning**) below that threshold, where survival is a
+  weaker signal.
+
+#### Live verification
+
+```
+loops/beginner     -> validated, mutation_score 0.667, survivors filtered
+arrays/intermediate -> REJECTED: generated reference failed 4/8 of its own tests
+```
+
+The second case is the point of the feature: an internally inconsistent
+AI-generated problem was caught before a learner ever saw it.
