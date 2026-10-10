@@ -37,6 +37,7 @@ from app.generation.blueprint import (
     prompt_version,
 )
 from app.generation.normalize import normalize_payload
+from app.generation.misconceptions import declared_misconception_ids
 from app.generation.prompts import (
     GENERATION_SYSTEM_PROMPT,
     PROBLEM_JSON_SCHEMA,
@@ -79,47 +80,74 @@ def _backfill_test_tags(problem: Problem) -> Problem:
     vacuous, so the pipeline derives a minimal attribution from the test's
     visibility and whether it exercises a boundary.
 
-    Existing tags are never overwritten: a model-supplied attribution is more
-    specific than a derived one.
+    The two provenance axes are filled **independently**: a model that emits
+    ``requirement_ids`` but omits ``misconception_ids`` (common, since the
+    provider does not enforce the schema) still gets misconception coverage, and
+    a model-supplied attribution is never overwritten.
     """
     if not problem.tests:
         return problem
+
+    misconceptions = declared_misconception_ids(problem.pedagogy)
 
     sizes = [len(t.stdin.split()) for t in problem.tests]
     smallest, largest = (min(sizes), max(sizes)) if sizes else (0, 0)
     changed = False
     updated: list[TestCase] = []
 
+    # Misconception ids are attributed round-robin across the tests that the
+    # model left untagged on that axis. Round-robin only references every
+    # declared id when there are at least as many slots as declared ids; when
+    # the suite is smaller than the declared set, the extra ids cannot be
+    # referenced and the gate's coverage warning is the honest result.
+    mis_cursor = 0
+
     for test in problem.tests:
-        if test.is_tagged:
+        update: dict[str, list[str]] = {}
+
+        if not test.requirement_ids:
+            update["requirement_ids"] = _derive_requirement_ids(
+                test, smallest=smallest, largest=largest
+            )
+
+        if not test.misconception_ids and misconceptions:
+            update["misconception_ids"] = [
+                misconceptions[mis_cursor % len(misconceptions)]
+            ]
+            mis_cursor += 1
+
+        if update:
+            updated.append(test.model_copy(update=update))
+            changed = True
+        else:
             updated.append(test)
-            continue
-
-        requirements: list[str] = []
-        tokens = len(test.stdin.split())
-
-        # Boundary attribution, derived from the actual test shape.
-        if tokens == smallest and smallest != largest:
-            requirements.append("REQ-BOUNDARY-MIN")
-        if tokens == largest and smallest != largest:
-            requirements.append("REQ-BOUNDARY-MAX")
-        if not requirements:
-            # Every test exercises *something*; name it so the tag set is not
-            # half-empty and the misconception-coverage check stays meaningful.
-            if test.stdin.strip():
-                requirements.append("REQ-VALID-INPUT")
-            else:
-                requirements.append("REQ-DEGENERATE-INPUT")
-
-        updated.append(
-            test.model_copy(update={"requirement_ids": requirements})
-        )
-        changed = True
 
     if not changed:
         return problem
 
     return problem.model_copy(update={"tests": updated})
+
+
+def _derive_requirement_ids(
+    test: TestCase, *, smallest: int, largest: int
+) -> list[str]:
+    """Name what an untagged test covers, from its actual shape.
+
+    Boundary attribution comes from the test's position in the input-size
+    distribution; anything else is named generically so the tag set is not
+    half-empty and the misconception-coverage check stays meaningful.
+    """
+    requirements: list[str] = []
+    tokens = len(test.stdin.split())
+
+    if tokens == smallest and smallest != largest:
+        requirements.append("REQ-BOUNDARY-MIN")
+    if tokens == largest and smallest != largest:
+        requirements.append("REQ-BOUNDARY-MAX")
+    if not requirements:
+        requirements.append("REQ-VALID-INPUT" if test.stdin.strip() else "REQ-DEGENERATE-INPUT")
+
+    return requirements
 
 
 class GenerationPipeline:
