@@ -56,8 +56,8 @@ else
   echo "    [i]  no .env yet - copy .env.example and add GOOGLE_API_KEY for AI features"
 fi
 
-# 5. Codespaces secrets. These are injected by GitHub only when the container
-#    is created/rebuilt AFTER the secret exists. We never print the values.
+# 5. Codespaces secrets. GitHub injects these into the environment when the
+#    container is built with the secret present. We never print the values.
 echo "==> Codespaces secrets"
 check_secret() {
   local name="$1" purpose="$2"
@@ -65,13 +65,35 @@ check_secret() {
     echo "    [ok] $name is set (${purpose})"
   else
     echo "    [!]  $name is NOT set (${purpose})"
-    echo "         -> GitHub > Settings > Codespaces > Secrets, then REBUILD the container."
-    echo "         -> Rebuild: Command Palette > 'Codespaces: Rebuild Container'"
+    echo "         -> GitHub > Settings > Codespaces > Secrets, then rebuild."
   fi
 }
 check_secret "KENARI_API_KEY" "OpenCode provider"
 check_secret "GEMINI_API_KEY" "Gemini / AI Studio"
-check_secret "GOOGLE_API_KEY" "alias of GEMINI_API_KEY for the app"
+
+# The app expects GOOGLE_API_KEY. If only GEMINI_API_KEY is present, persist
+# the alias so the application sees it. Stored in .env (gitignored), never
+# echoed to the terminal.
+if [ -z "${GOOGLE_API_KEY:-}" ] && [ -n "${GEMINI_API_KEY:-}" ]; then
+  if [ ! -f .env ]; then
+    cp .env.example .env 2>/dev/null || true
+  fi
+  if [ -f .env ] && ! grep -q "^GOOGLE_API_KEY=." .env; then
+    # Rewrite the GOOGLE_API_KEY line with the secret value.
+    if grep -q "^GOOGLE_API_KEY=" .env; then
+      python3 - "$GEMINI_API_KEY" <<'PY'
+import pathlib, sys
+path = pathlib.Path(".env")
+key = sys.argv[1]
+lines = path.read_text().splitlines()
+lines = [f"GOOGLE_API_KEY={key}" if l.startswith("GOOGLE_API_KEY=") else l for l in lines]
+path.write_text("\n".join(lines) + "\n")
+PY
+      echo "    [ok] GOOGLE_API_KEY populated in .env from GEMINI_API_KEY"
+    fi
+  fi
+  export GOOGLE_API_KEY="$GEMINI_API_KEY"
+fi
 
 echo "==> Setup complete. Start the app with:"
 echo "    uvicorn app.main:app --reload --host 127.0.0.1 --port 8000"
