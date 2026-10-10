@@ -1,0 +1,40 @@
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Data & runtime ---
+data/*.db
+data/*.db-*
+workspaces/*
+!workspaces/.gitkeep
+*.log
+
+# --- Generated problem packages (keep the example) ---
+problems/*
+!problems/example-problem/
+problems/example-problem/quality_report.json
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# --- OpenCode local ---
+.opencode/local/
