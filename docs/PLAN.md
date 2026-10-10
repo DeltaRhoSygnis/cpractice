@@ -166,7 +166,7 @@ attempts, and hidden-data separation.
 ## Progress tracker
 
 - [x] M1 — Local application foundation
-- [ ] M2 — Deterministic grading engine
+- [x] M2 — Deterministic grading engine
 - [ ] M3 — Problem package contract
 - [ ] M4 — AI problem generation
 - [ ] M5 — Learning feedback
@@ -184,3 +184,33 @@ attempts, and hidden-data separation.
 **M1 done-when:** the application starts locally and the browser can reach the
 backend — covered by `test_static_frontend_is_served` and
 `test_health_reports_ok`.
+
+### M2 delivered
+
+| File | Purpose |
+|---|---|
+| `app/schemas/test_case.py` | declarative `TestCase` contract + comparison modes |
+| `app/schemas/grading.py` | `CompilationResult`, `TestResult`, `GradingReport`, result categories |
+| `app/grading/compiler.py` | fixed-flag C compilation, truncated diagnostics |
+| `app/grading/runner.py` | process-group execution, timeout, output cap, resource limits |
+| `app/grading/comparator.py` | `exact_normalized` + `whitespace_tolerant` modes |
+| `app/grading/evaluator.py` | orchestration, result classification, safe diagnostics |
+
+**M2 done-when:** automated tests verify correct output, wrong output,
+compilation failure, runtime failure, timeout, and output-limit handling —
+all covered in `tests/test_evaluator.py`.
+
+#### Platform findings (Android / Termux)
+
+Verified by experiment and encoded in `app/grading/runner.py`:
+
+| Limit | Behaviour | Resolution |
+|---|---|---|
+| `RLIMIT_AS` | bionic linker aborts at load (`MapShadow CHECK p != MAP_FAILED`); failure is intermittent at *every* value, including large ones | Skipped on Android |
+| `RLIMIT_NPROC` | setting it in the child makes signal deaths report as exit code `1` instead of a negative signal | Skipped on Android |
+| `RLIMIT_CPU` | reliable | Applied everywhere |
+| wall-clock timeout | reliable via process-group kill | Applied everywhere |
+
+Consequence: crash detection must use **negative exit codes (signal death)**,
+never a heuristic over positive exit codes. A segfault is a runtime error
+regardless of the exit code a test expects.
