@@ -27,7 +27,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Kenari",
       "options": {
-        "baseURL": "https://api.kenari.ai/v1",
+        "baseURL": "https://kenari.id/v1",
         "apiKey": "{env:KENARI_API_KEY}"
       },
       "models": {
