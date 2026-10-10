@@ -21,41 +21,24 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.schemas.problem import CONTENT_KEYS, ProblemMetadata
+from app.schemas.test_case import TestCase
+
 #: Alternative keys for the problem statement, in priority order.
 _STATEMENT_KEYS = ("statement_md", "description", "statement", "problem", "prompt", "task")
 
 #: Metadata keys the schema accepts. Anything else is treated as a modelling
 #: artefact and either folded into the statement or dropped.
-_KNOWN_METADATA_KEYS = frozenset(
-    {
-        "schema_version",
-        "id",
-        "version",
-        "title",
-        "language",
-        "difficulty",
-        "topics",
-        "target_skills",
-        "compiler",
-        "entrypoint",
-        "comparison",
-        "time_limit_ms",
-        "memory_limit_mb",
-        "status",
-    }
-)
+#: Metadata keys the schema accepts. Derived from the model, not hand-listed:
+#: anything else is treated as a modelling artefact and either folded into the
+#: statement or dropped.
+_KNOWN_METADATA_KEYS = frozenset(ProblemMetadata.model_fields)
 
 #: Content keys preserved verbatim in the package payload.
-_KNOWN_CONTENT_KEYS = frozenset(
-    {
-        "statement_md",
-        "starter_code",
-        "reference_solution",
-        "tests",
-        "hints",
-        "solution_explanation",
-    }
-)
+#: Content keys preserved verbatim in the package payload.
+#: Derived from the canonical set so the two cannot drift apart - a mismatch
+#: here silently strips content before schema validation.
+_KNOWN_CONTENT_KEYS = frozenset(CONTENT_KEYS)
 
 #: Keys whose text is worth appending to the statement rather than discarding.
 _STATEMENT_APPENDIX_KEYS = (
@@ -67,18 +50,11 @@ _STATEMENT_APPENDIX_KEYS = (
 )
 
 #: Test-case keys the schema accepts.
-_KNOWN_TEST_KEYS = frozenset(
-    {
-        "id",
-        "name",
-        "visibility",
-        "stdin",
-        "expected_stdout",
-        "expected_exit_code",
-        "timeout_ms",
-        "comparison",
-    }
-)
+#:
+#: Derived from the TestCase model rather than hand-maintained: a hardcoded list
+#: silently strips any field added to the schema later, which is a correctness
+#: hazard (tags would vanish without any error).
+_KNOWN_TEST_KEYS = frozenset(TestCase.model_fields)
 
 #: Alternative keys for a single test list.
 _TESTS_KEYS = ("tests", "test_cases", "testcases")
@@ -312,6 +288,20 @@ def _normalize_test(test: dict[str, Any], index: int) -> dict[str, Any]:
             out.pop("timeout_ms", None)
         else:
             out["timeout_ms"] = timeout
+
+    # Provenance tags. Models return these inconsistently (a bare string, a
+    # comma-separated string, or nothing at all). Coerce to a list so a test's
+    # purpose survives whatever shape the model chose.
+    for key, synonyms in (
+        ("requirement_ids", ("requirement_ids", "requirements", "requirement")),
+        ("misconception_ids", ("misconception_ids", "misconceptions", "misconception")),
+    ):
+        value = None
+        for source in synonyms:
+            if source in out:
+                value = out[source]
+                break
+        out[key] = _as_string_list(value) if value is not None else []
 
     # Keep only keys the TestCase schema defines; alias sources are dropped.
     return {key: value for key, value in out.items() if key in _KNOWN_TEST_KEYS}

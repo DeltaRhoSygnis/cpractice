@@ -114,7 +114,11 @@ class BlueprintDesigner:
 
         try:
             text = with_retry(call, **kwargs)
-        except AIProviderError as exc:
+        except AIProviderError:
+            # Provider errors (auth, rate limit, unavailable) keep their type so
+            # the API layer can map them to the right status code.
+            raise
+        except Exception as exc:
             raise BlueprintError(f"provider failed while designing blueprint: {exc}") from exc
 
         try:

@@ -18,7 +18,19 @@ from app.ai.mock import MockProvider, failing_provider
 from app.config import Settings
 from app.generation.pipeline import GenerationPipeline
 from app.main import create_app
-from tests.test_generation_pipeline import good_payload as _calibrated_payload
+from tests.test_generation_pipeline import (
+    BLUEPRINT_JSON,
+    good_payload as _calibrated_payload,
+)
+
+def _two_stage(problem_response: str) -> MockProvider:
+    """Generation makes two provider calls (blueprint, then problem)."""
+    return MockProvider(
+        responder=lambda system, prompt, operation: (
+            BLUEPRINT_JSON if operation == 'build_blueprint' else problem_response
+        )
+    )
+
 
 REFERENCE = _calibrated_payload()["reference_solution"]
 
@@ -54,7 +66,7 @@ def _client_with_provider(tmp_path: Path, provider) -> TestClient:
 @pytest.fixture()
 def client_with_mock(tmp_path: Path):
     app = create_app(_settings(tmp_path))
-    provider = MockProvider(responses=json.dumps(PAYLOAD))
+    provider = _two_stage(json.dumps(PAYLOAD))
     with TestClient(app) as client:
         app.state.generation_pipeline = GenerationPipeline(
             provider, problems_dir=tmp_path / "problems", sleep=lambda _: None
@@ -120,11 +132,26 @@ def test_second_request_reports_cache_hit(client_with_mock) -> None:
     client, provider = client_with_mock
 
     first = client.post("/api/problems/generate", json={}).json()
+    calls_after_first = len(provider.calls)
     second = client.post("/api/problems/generate", json={}).json()
 
     assert first["from_cache"] is False
     assert second["from_cache"] is True
-    assert len(provider.calls) == 1
+    # A cache hit must cost no provider calls at all: the cache exists to
+    # protect the AI quota, so re-generating a blueprint to look up a key
+    # would defeat it.
+    assert len(provider.calls) == calls_after_first
+
+
+def test_cache_hit_preserves_the_blueprint(client_with_mock) -> None:
+    """A cached problem must still carry its designed objective."""
+    client, _ = client_with_mock
+    client.post("/api/problems/generate", json={})
+
+    problem_id = client.get("/api/problems").json()["problems"][0]["id"]
+    detail = client.get(f"/api/problems/{problem_id}").json()
+
+    assert detail["id"] == problem_id
 
 
 # --- validation ------------------------------------------------------------
@@ -165,7 +192,7 @@ def test_malformed_output_maps_to_422(tmp_path: Path) -> None:
     app = create_app(_settings(tmp_path))
     with TestClient(app) as client:
         app.state.generation_pipeline = GenerationPipeline(
-            MockProvider(responses="not json"), problems_dir=tmp_path / "problems", sleep=lambda _: None
+            _two_stage("not json"), problems_dir=tmp_path / "problems", sleep=lambda _: None
         )
         response = client.post("/api/problems/generate", json={})
 
@@ -178,7 +205,7 @@ def test_rejected_problem_is_reported_with_findings(tmp_path: Path) -> None:
     app = create_app(_settings(tmp_path))
     with TestClient(app) as client:
         app.state.generation_pipeline = GenerationPipeline(
-            MockProvider(responses=json.dumps(bad)),
+            _two_stage(json.dumps(bad)),
             problems_dir=tmp_path / "problems",
             sleep=lambda _: None,
         )

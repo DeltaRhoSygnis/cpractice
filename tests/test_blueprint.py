@@ -195,11 +195,21 @@ def test_unparseable_blueprint_raises() -> None:
         BlueprintDesigner(MockProvider(responses="not json")).design(BlueprintRequest(topic="x"))
 
 
-def test_provider_failure_raises_blueprint_error() -> None:
-    with pytest.raises(BlueprintError):
+def test_provider_failure_propagates_with_its_own_type() -> None:
+    """AuthError must not be masked as a blueprint failure.
+
+    The API layer maps provider errors to specific status codes, so wrapping
+    them here would lose that information.
+    """
+    with pytest.raises(AuthError):
         BlueprintDesigner(failing_provider(AuthError("no key"))).design(
             BlueprintRequest(topic="x")
         )
+
+
+def test_unparseable_blueprint_raises_blueprint_error() -> None:
+    with pytest.raises(BlueprintError):
+        BlueprintDesigner(MockProvider(responses="not json")).design(BlueprintRequest(topic="x"))
 
 
 def test_retries_a_transient_provider_failure() -> None:

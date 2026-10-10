@@ -33,8 +33,27 @@ PROBLEM_JSON_SCHEMA: dict = {
                     "stdin": {"type": "string"},
                     "expected_stdout": {"type": "string"},
                     "expected_exit_code": {"type": "integer"},
+                    # Provenance: what each test is for. Required by the
+                    # calibration standard, so the schema must ask for it.
+                    "requirement_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "misconception_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "rationale": {"type": "string"},
                 },
-                "required": ["id", "name", "visibility", "stdin", "expected_stdout"],
+                "required": [
+                    "id",
+                    "name",
+                    "visibility",
+                    "stdin",
+                    "expected_stdout",
+                    "requirement_ids",
+                    "misconception_ids",
+                ],
             },
         },
         "hints": {
@@ -133,6 +152,52 @@ Create one C programming exercise with these parameters:
 Deliver the exercise as JSON matching the schema. Ensure the reference \
 solution would pass every test you list. Include boundary cases among the \
 hidden tests."""
+
+
+def build_repair_prompt(
+    *,
+    problem: Problem,
+    findings: list[dict],
+    blueprint_text: str = "",
+) -> str:
+    """Render a repair request from a failing package and its findings.
+
+    The findings are stated as facts, and the specification is declared the
+    source of truth: fixing a symptom by weakening a test is forbidden.
+    """
+    finding_lines = "\n".join(
+        f"- [{f.get('code', '?')}] {f.get('message', '')}" for f in findings
+    )
+
+    blueprint_section = f"\n---\n\n{blueprint_text}\n" if blueprint_text else ""
+
+    return f"""\
+The exercise below failed validation. Fix only what the findings identify.
+
+## Findings
+
+{finding_lines}
+
+## The specification (source of truth)
+
+{problem.statement_md}
+
+## Reference solution
+
+```c
+{problem.reference_solution}
+```
+
+## Current tests
+
+{json.dumps([t.model_dump(mode="json") for t in problem.tests], indent=2)}
+{blueprint_section}
+Return the corrected package as JSON matching the schema.
+
+If a test failed, decide whether the *test* or the *reference* is wrong by
+checking each against the specification above. Never weaken a test to make it
+pass, and never change the specification to match buggy code. Every test must
+carry `requirement_ids` and `misconception_ids`."""
 
 
 def build_hint_prompt(

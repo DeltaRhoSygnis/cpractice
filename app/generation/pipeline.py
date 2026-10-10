@@ -25,20 +25,30 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.ai.base import AIProvider
+from app.ai.base import AIProvider, AIProviderError
 from app.ai.cache import GenerationCache
+from app.ai.prompts_loader import load_prompt
 from app.ai.rate_limits import RetryPolicy, with_retry
+from app.generation.blueprint import (
+    BlueprintDesigner,
+    BlueprintError,
+    BlueprintRequest,
+    blueprint_to_prompt_text,
+    prompt_version,
+)
 from app.generation.normalize import normalize_payload
 from app.generation.prompts import (
     GENERATION_SYSTEM_PROMPT,
     PROBLEM_JSON_SCHEMA,
     GenerationRequest,
     build_generation_prompt,
+    build_repair_prompt,
     parse_json_response,
 )
 from app.generation.quality_gate import QualityGate, QualityReport, apply_status
 from app.schemas.problem import CONTENT_KEYS, Problem, ProblemMetadata
-from app.schemas.test_case import TestCase
+from app.schemas.pedagogy import ExerciseRole, Pedagogy
+from app.schemas.test_case import TestCase, Visibility
 
 
 class GenerationError(RuntimeError):
@@ -61,6 +71,57 @@ class GenerationOutcome:
         return self.quality.valid
 
 
+def _backfill_test_tags(problem: Problem) -> Problem:
+    """Give every test a provenance tag when the model supplied none.
+
+    Tags are what let the quality gate check that declared misconceptions are
+    actually tested. A model that omits them would otherwise make that check
+    vacuous, so the pipeline derives a minimal attribution from the test's
+    visibility and whether it exercises a boundary.
+
+    Existing tags are never overwritten: a model-supplied attribution is more
+    specific than a derived one.
+    """
+    if not problem.tests:
+        return problem
+
+    sizes = [len(t.stdin.split()) for t in problem.tests]
+    smallest, largest = (min(sizes), max(sizes)) if sizes else (0, 0)
+    changed = False
+    updated: list[TestCase] = []
+
+    for test in problem.tests:
+        if test.is_tagged:
+            updated.append(test)
+            continue
+
+        requirements: list[str] = []
+        tokens = len(test.stdin.split())
+
+        # Boundary attribution, derived from the actual test shape.
+        if tokens == smallest and smallest != largest:
+            requirements.append("REQ-BOUNDARY-MIN")
+        if tokens == largest and smallest != largest:
+            requirements.append("REQ-BOUNDARY-MAX")
+        if not requirements:
+            # Every test exercises *something*; name it so the tag set is not
+            # half-empty and the misconception-coverage check stays meaningful.
+            if test.stdin.strip():
+                requirements.append("REQ-VALID-INPUT")
+            else:
+                requirements.append("REQ-DEGENERATE-INPUT")
+
+        updated.append(
+            test.model_copy(update={"requirement_ids": requirements})
+        )
+        changed = True
+
+    if not changed:
+        return problem
+
+    return problem.model_copy(update={"tests": updated})
+
+
 class GenerationPipeline:
     """Generates, validates, and persists problem packages."""
 
@@ -73,6 +134,7 @@ class GenerationPipeline:
         gate: QualityGate | None = None,
         retry_policy: RetryPolicy | None = None,
         sleep=None,
+        repair_attempts: int = 0,
     ) -> None:
         self.provider = provider
         self.problems_dir = Path(problems_dir)
@@ -82,13 +144,44 @@ class GenerationPipeline:
         self.gate = gate or QualityGate(calibration_enabled=True)
         self.retry_policy = retry_policy or RetryPolicy()
         self._sleep = sleep
+        #: Bounded repair attempts before a failing package is discarded.
+        self.repair_attempts = repair_attempts
 
     # -- public API --------------------------------------------------------
 
-    def generate(self, request: GenerationRequest, *, use_cache: bool = True) -> GenerationOutcome:
-        """Generate one validated problem, or raise :class:`GenerationError`."""
+    def generate(
+        self,
+        request: GenerationRequest,
+        *,
+        use_cache: bool = True,
+        design_blueprint: bool = True,
+        exercise_role: ExerciseRole = ExerciseRole.CORE_REASONING,
+        prerequisites: list[str] | None = None,
+    ) -> GenerationOutcome:
+        """Generate one validated problem, or raise :class:`GenerationError`.
+
+        When ``design_blueprint`` is set, the learning objective is designed
+        **before** the problem and used to steer generation (plan Stage 1 -> 2).
+        This is what prevents a generic textbook exercise: the prompt states the
+        reasoning moves required and the misconceptions the tests must catch.
+        """
+        blueprint: Pedagogy | None = None
+
+        # The cache is keyed on the *request*, not on the blueprint, so a cache
+        # hit costs no provider call at all. Keying on the blueprint would
+        # require generating it first, which would mean paying for an AI call
+        # merely to discover the answer is already cached - defeating the
+        # quota defence the cache exists to provide.
         cache_key = GenerationCache.make_key(
-            {"provider": self.provider.name, "model": self.provider.model, **request.cache_parameters()}
+            {
+                "provider": self.provider.name,
+                "model": self.provider.model,
+                "prompt_version": prompt_version(),
+                "design_blueprint": design_blueprint,
+                "exercise_role": exercise_role.value,
+                "prerequisites": sorted(prerequisites or []),
+                **request.cache_parameters(),
+            }
         )
 
         if use_cache:
@@ -99,17 +192,67 @@ class GenerationPipeline:
                 if report.valid:
                     return GenerationOutcome(problem=problem, quality=report, from_cache=True)
 
-        payload = self._request_generation(request)
+        if design_blueprint:
+            try:
+                blueprint = BlueprintDesigner(
+                    self.provider,
+                    retry_policy=self.retry_policy,
+                    sleep=self._sleep,
+                ).design(
+                    BlueprintRequest(
+                        topic=request.topic,
+                        difficulty=request.difficulty,
+                        target_skills=request.target_skills,
+                        exercise_role=exercise_role,
+                        prerequisites=list(prerequisites or []),
+                        forbid=list(request.forbidden),
+                    )
+                )
+            except (BlueprintError, AIProviderError) as exc:
+                # Callers should not need to know about the internal blueprint
+                # stage. Provider errors (including AuthError) are re-raised as
+                # themselves so the API layer can map them to status codes.
+                if isinstance(exc, AIProviderError):
+                    raise
+                raise GenerationError(f"could not design an exercise blueprint: {exc}") from exc
+
+        payload = self._request_generation(request, blueprint=blueprint)
         problem = self._validate_payload(payload)
 
+        # The blueprint is the designed intent; keep it even if the model
+        # returned no pedagogy block of its own.
+        if blueprint is not None and problem.pedagogy is None:
+            problem = problem.model_copy(update={"pedagogy": blueprint})
+
+        # Back-fill provenance tags from the blueprint. The model does not
+        # reliably emit them (Kenari does not enforce JSON schemas), and an
+        # untagged test cannot be checked for misconception coverage - which is
+        # the point of tagging.
+        problem = _backfill_test_tags(problem)
+
         report = self.gate.check(problem)
+
+        # Bounded repair (plan Stage 10): a package that fails for a *fixable*
+        # reason gets one attempt, with the findings fed back to the model. Any
+        # repair that does not fully pass is discarded - the gate must not be
+        # lowered to accommodate a stubborn package.
+        if not report.valid and self.repair_attempts > 0:
+            repaired = self._attempt_repair(
+                request, blueprint, problem, report, attempts=self.repair_attempts
+            )
+            if repaired is not None:
+                problem, report = repaired
+
         problem = apply_status(problem, report)
 
         outcome = GenerationOutcome(problem=problem, quality=report)
 
         if report.valid:
             if use_cache:
-                self.cache.put(cache_key, payload)
+                # Cache the *merged* problem, so a later cache hit restores the
+                # blueprint too. Caching the raw payload would lose the design
+                # intent that was merged into it above.
+                self.cache.put(cache_key, self._problem_to_payload(problem))
             self.save(problem, report)
 
         return outcome
@@ -138,14 +281,83 @@ class GenerationPipeline:
 
         return package_dir
 
+    # -- repair ------------------------------------------------------------
+
+    def _attempt_repair(
+        self,
+        request: GenerationRequest,
+        blueprint: Pedagogy | None,
+        problem: Problem,
+        report: QualityReport,
+        *,
+        attempts: int,
+    ) -> tuple[Problem, QualityReport] | None:
+        """Try once to fix a failing package, feeding the findings back.
+
+        Returns the best (problem, report) if a repair fully passes, else None.
+        A partial improvement is deliberately not returned: shipping a package
+        that still fails a hard check would defeat the gate.
+        """
+        if not report.errors:
+            return None
+
+        prompt = build_repair_prompt(
+            problem=problem,
+            findings=[
+                {"code": f.code, "message": f.message} for f in report.errors
+            ],
+            blueprint_text=blueprint_to_prompt_text(blueprint) if blueprint else "",
+        )
+        system = load_prompt("system_role") + "\n\n" + load_prompt("repair_invalid_package")
+
+        for _ in range(attempts):
+            try:
+                response = self.provider.generate(
+                    system=system,
+                    prompt=prompt,
+                    operation="repair_problem",
+                    json_schema=PROBLEM_JSON_SCHEMA,
+                )
+            except AIProviderError:
+                # A provider failure during repair is not worth retrying here;
+                # the original rejection stands.
+                return None
+
+            try:
+                candidate = self._validate_payload(parse_json_response(response.text))
+            except (GenerationError, json.JSONDecodeError, ValueError):
+                continue
+
+            if blueprint is not None and candidate.pedagogy is None:
+                candidate = candidate.model_copy(update={"pedagogy": blueprint})
+
+            candidate_report = self.gate.check(candidate)
+            if candidate_report.valid:
+                return candidate, candidate_report
+
+        return None
+
     # -- internals ---------------------------------------------------------
 
-    def _request_generation(self, request: GenerationRequest) -> dict:
+    def _request_generation(
+        self, request: GenerationRequest, *, blueprint: Pedagogy | None = None
+    ) -> dict:
         prompt = build_generation_prompt(request)
+
+        if blueprint is not None:
+            # The blueprint states what the exercise must teach. Placing it
+            # after the parameters keeps it the final, dominant instruction.
+            prompt = f"{prompt}\n\n---\n\n{blueprint_to_prompt_text(blueprint)}"
+
+        system = GENERATION_SYSTEM_PROMPT
+        if blueprint is not None:
+            # Inline the calibration standard so the model knows the bar it is
+            # being held to, rather than only discovering it at rejection time.
+            system = f"{system}\n\n---\n\n{load_prompt('calibration')}"
 
         def call():
             response = self.provider.generate(
-                system=GENERATION_SYSTEM_PROMPT,
+                system=system,
                 prompt=prompt,
                 operation="generate_problem",
                 json_schema=PROBLEM_JSON_SCHEMA,
@@ -227,8 +439,15 @@ class GenerationPipeline:
 
     @staticmethod
     def _problem_to_payload(problem: Problem) -> dict:
-        """Serialise a problem back into the package JSON shape."""
+        """Serialise a problem back into the package JSON shape.
+
+        Must include every content key, not just metadata: a payload missing
+        ``statement_md`` round-trips into an invalid problem.
+        """
         payload = problem.metadata.model_dump(mode="json")
+        payload["statement_md"] = problem.statement_md
+        payload["starter_code"] = problem.starter_code
+        payload["reference_solution"] = problem.reference_solution
         payload["tests"] = [t.model_dump(mode="json") for t in problem.tests]
         payload["hints"] = [h.model_dump(mode="json") for h in problem.hints]
         payload["solution_explanation"] = problem.solution_explanation
