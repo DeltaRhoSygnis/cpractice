@@ -31,10 +31,21 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
+const TOAST_ICON = { ok: "✔", fail: "✘", warn: "!" };
+const TOAST_WORD = { ok: "Success", fail: "Error", warn: "Warning" };
+
 function toast(message, kind = "ok") {
   const region = $("#toast-region");
   if (!region) return;
-  const node = el("div", { class: `toast toast--${kind}`, text: message });
+  // Pass/fail must never be carried by colour alone: pair the tint with an
+  // icon, exactly as the status lines do. A visually-hidden word gives screen
+  // readers the same state cue, since the message itself may be terse
+  // (e.g. "HTTP 500") and the icon is aria-hidden.
+  const node = el("div", { class: `toast toast--${kind}` }, [
+    el("span", { class: "toast__icon", "aria-hidden": "true", text: TOAST_ICON[kind] || "✔" }),
+    el("span", { class: "visually-hidden", text: `${TOAST_WORD[kind] || "Notice"}: ` }),
+    el("span", { text: message }),
+  ]);
   region.append(node);
   setTimeout(() => node.remove(), 5000);
 }

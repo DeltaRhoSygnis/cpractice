@@ -207,3 +207,62 @@ def test_assets_are_not_cached(client: TestClient) -> None:
         assert response.status_code == 200
         cache_control = response.headers.get("cache-control", "")
         assert "no-cache" in cache_control, f"{path} must not be cached"
+
+
+# --- design-system guarantees ----------------------------------------------
+
+
+def test_theme_defines_both_schemes() -> None:
+    """The restyle must keep a dark default and a light override."""
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+
+    assert "prefers-color-scheme: light" in css
+    assert "--bg:" in css and "--surface:" in css and "--text:" in css
+
+
+def test_control_border_has_its_own_token() -> None:
+    """Control boundaries must not reuse the decorative hairline.
+
+    WCAG 1.4.11 needs a perceivable edge on inputs; a single `--border` cannot
+    serve both a 1px divider and a control outline.
+    """
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+
+    assert "--border-strong:" in css
+    assert "border: 1px solid var(--border-strong)" in css
+
+
+def test_reduced_motion_stops_the_spinner() -> None:
+    """Reduced motion must neutralise, not merely slow, the spinner."""
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+
+    assert "prefers-reduced-motion" in css
+    assert "animation: none" in css
+
+
+def test_transitions_name_their_properties() -> None:
+    """`transition: all` is banned; each transition lists what it animates."""
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+
+    assert "transition: all" not in css
+    assert "will-change: all" not in css
+
+
+def test_status_is_never_signalled_by_colour_alone() -> None:
+    """Icons accompany status colours in both the status list and toasts."""
+    script = (WEB / "app.js").read_text(encoding="utf-8")
+
+    assert "TOAST_ICON" in script
+    assert "status-icon" in script or "STATUS_ICON" in script
+
+
+def test_glass_is_limited_and_has_a_flat_backdrop() -> None:
+    """Glass is a deliberate accent, not a theme: the body stays opaque.
+
+    A translucent body behind a translucent header would destroy contrast.
+    """
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+
+    assert "backdrop-filter" in css
+    # The body must paint a solid background behind the glass surfaces.
+    assert "body {" in css and "background: var(--bg);" in css
