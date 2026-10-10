@@ -1,0 +1,52 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "build",
+  "snapshots": false,
+  "update": "disable",
+  "watcher": {
+    "ignore": [
+      ".git/**",
+      "node_modules/**",
+      "dist/**",
+      "coverage/**",
+      ".opencode/plugins/**",
+      "workspaces/**",
+      "data/**",
+      "__pycache__/**"
+    ]
+  },
+  "instructions": [
+    "AGENTS.md",
+    "instructions/INSTRUCTIONS.md"
+  ],
+
+  "model": "kenari/deepseek-v4-1-flash",
+
+  "provider": {
+    "kenari": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Kenari",
+      "options": {
+        "baseURL": "https://api.kenari.ai/v1",
+        "apiKey": "{env:KENARI_API_KEY}"
+      },
+      "models": {
+        "deepseek-v4-1-flash": {
+          "name": "DeepSeek V4.1 Flash"
+        }
+      }
+    }
+  },
+
+  "permission": {
+    "edit": "allow",
+    "bash": {
+      "git *": "allow",
+      "pytest*": "allow",
+      "python *": "allow",
+      "pip *": "allow",
+      "*": "ask"
+    },
+    "webfetch": "allow"
+  }
+}
