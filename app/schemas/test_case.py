@@ -49,9 +49,28 @@ class TestCase(BaseModel):
     timeout_ms: int | None = Field(default=None, gt=0, le=60_000)
     comparison: ComparisonMode | None = None
 
+    # Pedagogical provenance. Optional so problems authored before these
+    # fields existed still load unchanged.
+    #: Which stated requirement(s) this test checks, e.g. ["REQ-BOUNDARY-02"].
+    requirement_ids: list[str] = Field(default_factory=list, max_length=6)
+    #: Which likely misconception(s) this test exposes, e.g. ["MIS-OFF-BY-ONE-01"].
+    misconception_ids: list[str] = Field(default_factory=list, max_length=6)
+    #: Short note on why this case exists (author-only).
+    rationale: str = Field(default="", max_length=300)
+
     @field_validator("id")
     @classmethod
     def _validate_id(cls, value: str) -> str:
         if value != value.lower():
             raise ValueError("test id must be lowercase")
         return value
+
+    @property
+    def is_tagged(self) -> bool:
+        """True when the test declares what it is for."""
+        return bool(self.requirement_ids or self.misconception_ids)
+
+    @property
+    def is_boundary(self) -> bool:
+        """True when the test claims to cover a boundary or requirement."""
+        return any("bound" in rid.lower() for rid in self.requirement_ids)

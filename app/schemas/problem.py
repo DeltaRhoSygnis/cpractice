@@ -12,6 +12,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.test_case import ComparisonMode, TestCase
+from app.schemas.pedagogy import Pedagogy
 
 SCHEMA_VERSION = "1.0"
 
@@ -26,6 +27,7 @@ CONTENT_KEYS = frozenset(
         "tests",
         "hints",
         "solution_explanation",
+        "pedagogy",
     }
 )
 
@@ -111,6 +113,10 @@ class Problem(BaseModel):
     reference_solution: str = ""
     hints: list[Hint] = Field(default_factory=list)
     solution_explanation: str = ""
+
+    #: Pedagogical metadata. Optional: problems authored before this schema
+    #: existed load unchanged, with pedagogy=None.
+    pedagogy: Pedagogy | None = None
 
     @model_validator(mode="after")
     def _validate_tests_and_hints(self) -> Problem:

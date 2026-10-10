@@ -18,37 +18,110 @@ from app.generation.prompts import (
     parse_json_response,
 )
 
-REFERENCE = (
-    '#include <stdio.h>\n'
-    'int main(void){int a,b;if(scanf("%d %d",&a,&b)!=2)return 1;'
-    'printf("%d\\n",a+b);return 0;}\n'
-)
+# --- a calibrated reference problem ---------------------------------------
+#
+# The shared fixture must meet the calibration standard, because the pipeline
+# now enforces it: a simple "add two numbers" exercise is rejected as a single
+# reasoning move whose tests vary only by value.
+#
+# Task: read a count n, then n scores. Print the running maximum and each
+# score's distance below it.
+#
+# Reasoning moves: (1) consume a count followed by that many values, and
+# (2) update running state before using it. Output exposes intermediate
+# correctness, so a wrong update is visible.
+
+REFERENCE = """#include <stdio.h>
+
+int main(void) {
+    int n;
+    if (scanf("%d", &n) != 1) return 1;
+
+    int running_max = 0;
+    int first = 1;
+
+    for (int i = 0; i < n; i++) {
+        int score;
+        if (scanf("%d", &score) != 1) return 1;
+
+        if (first || score > running_max) {
+            running_max = score;
+            first = 0;
+        }
+
+        printf("%d %d\\n", running_max, running_max - score);
+    }
+
+    return 0;
+}
+"""
 
 
 def good_payload(**overrides) -> dict:
     payload = {
-        "id": "c-generated-sum",
-        "title": "Generated Sum",
+        "id": "c-running-max-gap",
+        "title": "Running Maximum and Gap",
         "difficulty": "beginner",
-        "topics": ["arithmetic"],
-        "target_skills": ["scanf"],
-        "statement_md": "# Sum\n\nRead two integers and print their sum.",
-        "starter_code": "int main(void){return 0;}",
+        "topics": ["loops", "state"],
+        "target_skills": ["maintaining running state", "deriving loop bounds"],
+        "statement_md": (
+            "# Running Maximum and Gap\n\n"
+            "Read a count `n`, then `n` scores. For each score in order, print the "
+            "highest score seen so far, followed by how far below that maximum this "
+            "score is.\n"
+        ),
+        "starter_code": "#include <stdio.h>\n\nint main(void) {\n    return 0;\n}\n",
         "reference_solution": REFERENCE,
         "tests": [
-            {"id": "a", "name": "A", "visibility": "public", "stdin": "1 2\n", "expected_stdout": "3\n"},
-            {"id": "b", "name": "B", "visibility": "public", "stdin": "-1 -2\n", "expected_stdout": "-3\n"},
-            {"id": "c", "name": "C", "visibility": "hidden", "stdin": "0 0\n", "expected_stdout": "0\n"},
-            {"id": "d", "name": "D", "visibility": "hidden", "stdin": "1000 2000\n", "expected_stdout": "3000\n"},
+            {"id": "basic", "name": "Basic ascent", "visibility": "public",
+             "stdin": "3\n5 10 7\n", "expected_stdout": "5 0\n10 0\n10 3\n",
+             "requirement_ids": ["REQ-RUNNING-STATE"]},
+            {"id": "descending", "name": "Strictly decreasing", "visibility": "public",
+             "stdin": "3\n9 4 1\n", "expected_stdout": "9 0\n9 5\n9 8\n",
+             "requirement_ids": ["REQ-RUNNING-STATE"]},
+            {"id": "single", "name": "Minimum input: one score", "visibility": "hidden",
+             "stdin": "1\n42\n", "expected_stdout": "42 0\n",
+             "requirement_ids": ["REQ-BOUNDARY-MIN"],
+             "misconception_ids": ["MIS-INIT-ZERO"]},
+            {"id": "zeros", "name": "All zeros", "visibility": "hidden",
+             "stdin": "3\n0 0 0\n", "expected_stdout": "0 0\n0 0\n0 0\n",
+             "requirement_ids": ["REQ-BOUNDARY-MIN"]},
+            {"id": "late-max", "name": "Maximum appears last", "visibility": "hidden",
+             "stdin": "4\n1 2 3 100\n",
+             "expected_stdout": "1 0\n2 0\n3 0\n100 0\n",
+             "requirement_ids": ["REQ-BOUNDARY-MAX"],
+             "misconception_ids": ["MIS-LATE-UPDATE"]},
+            {"id": "max-input", "name": "Large values at maximum count", "visibility": "hidden",
+             "stdin": "2\n1000000 1000000\n", "expected_stdout": "1000000 0\n1000000 0\n",
+             "requirement_ids": ["REQ-BOUNDARY-MAX"]},
         ],
         "hints": [
-            {"level": 1, "text": "concept"},
-            {"level": 2, "text": "direction"},
-            {"level": 3, "text": "trace"},
-            {"level": 4, "text": "pseudocode"},
-            {"level": 5, "text": "see reference approach"},
+            {"level": 1, "text": "This is about state that persists between iterations."},
+            {"level": 2, "text": "What must remain true after each score is read?"},
+            {"level": 3, "text": "Track the best score so far. When should it change?"},
+            {"level": 4, "text": "Read n, loop n times, keep a running maximum, update before printing."},
+            {"level": 5, "text": "See the reference approach."},
         ],
-        "solution_explanation": "Read two ints and print the sum.",
+        "solution_explanation": (
+            "The invariant is that running_max holds the largest score read so far. "
+            "Updating it before printing means each line includes the current score."
+        ),
+        "pedagogy": {
+            "primary_objective": "maintain correct running state across iterations",
+            "secondary_objectives": ["derive a count-driven loop bound"],
+            "prerequisites": ["for_loops", "if_else"],
+            "target_reasoning_moves": [
+                "consume a count followed by that many values",
+                "update running state before using it",
+            ],
+            "likely_misconceptions": [
+                "MIS-INIT-ZERO: initialising the maximum to 0 breaks for n=1 below zero",
+                "MIS-LATE-UPDATE: printing before updating lags by one iteration",
+            ],
+            "exercise_role": "core_reasoning",
+            "difficulty_profile": {"reasoning_steps": 2, "state_management": 2},
+            "transfer_goal": "Track a running minimum in a different scan.",
+        },
     }
     payload.update(overrides)
     return payload
@@ -67,9 +140,9 @@ def test_generates_and_validates_a_problem(tmp_path: Path) -> None:
     outcome = _pipeline(tmp_path, provider).generate(GenerationRequest())
 
     assert outcome.accepted is True
-    assert outcome.problem.id == "c-generated-sum"
+    assert outcome.problem.id == "c-running-max-gap"
     assert outcome.problem.metadata.status.value == "validated"
-    assert outcome.quality.reference_passed == 4
+    assert outcome.quality.reference_passed == 6
 
 
 def test_saves_package_and_quality_report(tmp_path: Path) -> None:
@@ -77,7 +150,7 @@ def test_saves_package_and_quality_report(tmp_path: Path) -> None:
 
     _pipeline(tmp_path, provider).generate(GenerationRequest())
 
-    package = tmp_path / "problems" / "c-generated-sum"
+    package = tmp_path / "problems" / "c-running-max-gap"
     assert (package / "problem.json").is_file()
     assert (package / "statement.md").is_file()
     assert (package / "starter" / "main.c").is_file()
@@ -91,10 +164,10 @@ def test_saved_package_reloads_through_the_repository(tmp_path: Path) -> None:
     provider = MockProvider(responses=json.dumps(good_payload()))
     _pipeline(tmp_path, provider).generate(GenerationRequest())
 
-    reloaded = ProblemRepository(tmp_path / "problems").load("c-generated-sum")
+    reloaded = ProblemRepository(tmp_path / "problems").load("c-running-max-gap")
 
-    assert reloaded.title == "Generated Sum"
-    assert len(reloaded.tests) == 4
+    assert reloaded.title == "Running Maximum and Gap"
+    assert len(reloaded.tests) == 6
     assert reloaded.reference_solution.strip() == REFERENCE.strip()
 
 

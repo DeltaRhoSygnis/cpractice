@@ -86,6 +86,7 @@ class ProblemRepository:
                 tests=tests,
                 hints=raw.get("hints", []),
                 solution_explanation=raw.get("solution_explanation", ""),
+                pedagogy=raw.get("pedagogy") or None,
             )
         except ValidationError as exc:
             raise ProblemValidationError(

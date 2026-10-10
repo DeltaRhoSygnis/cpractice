@@ -77,7 +77,9 @@ class GenerationPipeline:
         self.provider = provider
         self.problems_dir = Path(problems_dir)
         self.cache = cache or GenerationCache(self.problems_dir / ".cache")
-        self.gate = gate or QualityGate()
+        # Generated problems are held to the full quality standard, including
+        # calibration. Hand-authored or legacy content uses the default gate.
+        self.gate = gate or QualityGate(calibration_enabled=True)
         self.retry_policy = retry_policy or RetryPolicy()
         self._sleep = sleep
 
@@ -218,6 +220,7 @@ class GenerationPipeline:
                 tests=tests,
                 hints=payload.get("hints", []),
                 solution_explanation=payload.get("solution_explanation", ""),
+                pedagogy=payload.get("pedagogy") or None,
             )
         except ValidationError as exc:
             raise GenerationError(f"generated problem failed validation: {exc}") from exc
@@ -229,6 +232,8 @@ class GenerationPipeline:
         payload["tests"] = [t.model_dump(mode="json") for t in problem.tests]
         payload["hints"] = [h.model_dump(mode="json") for h in problem.hints]
         payload["solution_explanation"] = problem.solution_explanation
+        if problem.pedagogy is not None:
+            payload["pedagogy"] = problem.pedagogy.model_dump(mode="json")
         return payload
 
     def _problem_from_payload(self, payload: dict) -> Problem:
