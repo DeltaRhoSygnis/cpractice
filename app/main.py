@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from app.ai.base import AIProviderError, AuthError
 from app.ai.cache import GenerationCache
 from app.ai.google import GoogleProvider
+from app.ai.kenari import KenariProvider
 from app.ai.rate_limits import RetryPolicy
 from app.api import generation, health, problems
 from app.config import Settings, get_settings
@@ -42,7 +43,17 @@ def _build_generation_pipeline(settings: Settings) -> GenerationPipeline | None:
     """
     provider = None
 
-    if settings.ai_provider == "google":
+    if settings.ai_provider == "kenari":
+        try:
+            provider = KenariProvider(
+                settings.kenari_api_key,
+                model=settings.ai_model,
+                base_url=settings.kenari_base_url,
+            )
+        except AuthError:
+            logger.warning("no KENARI_API_KEY configured; AI generation is disabled")
+            return None
+    elif settings.ai_provider == "google":
         try:
             provider = GoogleProvider(settings.google_api_key, model=settings.ai_model)
         except AuthError:

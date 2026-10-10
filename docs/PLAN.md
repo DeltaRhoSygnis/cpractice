@@ -72,7 +72,7 @@ toolchain, and `postCreateCommand`.
 | Platform tests | pytest (mocked AI provider) |
 | Metadata | SQLite |
 | Problem packages | JSON + Markdown + C files |
-| AI | Provider adapter interface; first impl = Google Gemini |
+| AI | Provider adapter interface; first impl = **Kenari** (deepseek-v4-1-flash) |
 
 ---
 
@@ -281,7 +281,43 @@ reference solution is withheld unless explicitly requested. Verified by
 | `app/generation/prompts.py` | system/user prompts, JSON schema, tolerant JSON parsing |
 | `app/generation/quality_gate.py` | structural + behavioural validation with severity findings |
 | `app/generation/pipeline.py` | request → parse → gate → save |
+| `app/generation/normalize.py` | maps model output variants onto the canonical schema |
+| `app/ai/kenari.py` | Kenari gateway adapter (OpenAI-compatible) |
 | `app/api/generation.py` | `POST /api/problems/generate` |
+
+#### Live verification (Kenari / deepseek-v4-1-flash)
+
+Real generations through the gateway, all validated by the deterministic gate:
+
+| Topic | Difficulty | Result | Reference |
+|---|---|---|---|
+| loops | beginner | validated | 8/8 |
+| arrays | intermediate | validated | 9/9 |
+| recursion | advanced | validated | 13/13 |
+| strings | beginner | validated | 5/5 |
+| sorting | intermediate | validated | 10/10 |
+
+#### Why normalisation exists
+
+Kenari documents that `response_format` is **forwarded, not enforced** — the
+gateway does not verify the result, so a reply may be valid JSON, invalid
+JSON, or fenced JSON, using different field names. Observed in real responses:
+
+| Model returned | Normalised to |
+|---|---|
+| `description` | `statement_md` |
+| `input_format` / `output_format` / `constraints` | appended to the statement |
+| `public_tests` + `hidden_tests` | one `tests` list with `visibility` |
+| `input` / `expected_output` | `stdin` / `expected_stdout` |
+| `topic: "loops"` | `topics: ["loops"]` |
+| hints as bare strings | `{level, text}` objects, renumbered 1..n |
+| stray scalar inside `tests` | skipped |
+| `schema_version: 1` | `"1"` |
+
+Normalisation performs only lossless mapping: it never invents test data, and a
+payload with no usable tests is still rejected. Everything is re-validated
+against the Pydantic schemas afterwards, so the gate - not the model - still
+decides validity.
 
 **M4 done-when:** a generated exercise is rejected if malformed or
 inconsistent, and a validated exercise is saved for reuse.

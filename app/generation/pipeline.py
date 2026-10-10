@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from app.ai.base import AIProvider
 from app.ai.cache import GenerationCache
 from app.ai.rate_limits import RetryPolicy, with_retry
+from app.generation.normalize import normalize_payload
 from app.generation.prompts import (
     GENERATION_SYSTEM_PROMPT,
     PROBLEM_JSON_SCHEMA,
@@ -162,7 +163,22 @@ class GenerationPipeline:
         return payload
 
     def _validate_payload(self, payload: dict) -> Problem:
-        """Build a Problem from raw payload, rejecting malformed output."""
+        """Build a Problem from raw payload, rejecting malformed output.
+
+        The payload is normalised first: models do not honour JSON schemas
+        reliably, so field-name variants (``description`` for ``statement_md``,
+        split ``public_tests``/``hidden_tests``, a scalar ``topic``) are mapped
+        onto the canonical shape before validation.
+        """
+        payload = normalize_payload(payload)
+
+        # A payload with no tests is structurally incomplete. The schema allows
+        # an empty list (a problem may be authored incrementally), so the
+        # pipeline — which must only ever accept complete generated packages —
+        # enforces the stronger requirement here.
+        if not payload.get("tests"):
+            raise GenerationError("generated payload contains no tests")
+
         metadata_raw = {k: v for k, v in payload.items() if k not in CONTENT_KEYS}
 
         # The provider may omit id/version; derive a stable placeholder rather
