@@ -158,9 +158,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Static frontend ---
     # Mounted last so it never shadows /api routes.
     if settings.web_dir.is_dir():
+
+        class NoCacheStaticFiles(StaticFiles):
+            """Serve assets without letting the browser reuse stale copies.
+
+            During development the browser would otherwise keep a cached
+            ``app.js`` and never pick up changes, which looks like the UI
+            "not updating". Revalidation is cheap on localhost.
+            """
+
+            def file_response(self, *args, **kwargs):
+                response = super().file_response(*args, **kwargs)
+                response.headers["Cache-Control"] = "no-cache, must-revalidate"
+                return response
+
         app.mount(
             "/",
-            StaticFiles(directory=settings.web_dir, html=True),
+            NoCacheStaticFiles(directory=settings.web_dir, html=True),
             name="web",
         )
 

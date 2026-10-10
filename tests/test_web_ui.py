@@ -183,3 +183,27 @@ def test_usage_shape_matches_ui_expectations(client: TestClient) -> None:
     body = client.get("/api/usage").json()
 
     assert set(body) >= {"provider", "model", "today", "budget"}
+
+
+def test_favicon_is_served(client: TestClient) -> None:
+    """Browsers request this automatically; a 404 on every page load is noise."""
+    response = client.get("/favicon.svg")
+
+    assert response.status_code == 200
+    assert "svg" in response.headers["content-type"]
+
+
+def test_index_references_the_favicon() -> None:
+    index = (WEB / "index.html").read_text(encoding="utf-8")
+
+    assert 'rel="icon"' in index
+    assert "/favicon.svg" in index
+
+
+def test_assets_are_not_cached(client: TestClient) -> None:
+    """A stale cached app.js makes the UI look like it never updates."""
+    for path in ("/", "/app.js", "/styles.css"):
+        response = client.get(path)
+        assert response.status_code == 200
+        cache_control = response.headers.get("cache-control", "")
+        assert "no-cache" in cache_control, f"{path} must not be cached"
