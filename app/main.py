@@ -23,6 +23,7 @@ from app.api import generation, health, problems, progress, submissions
 from app.config import Settings, get_settings
 from app.feedback.hint_service import HintService
 from app.generation.pipeline import GenerationPipeline
+from app.services.adaptive_service import AdaptivePlanner
 from app.services.problem_service import ProblemService
 from app.services.submission_service import SubmissionService
 from app.storage.attempt_repository import AttemptRepository, ProblemIndex
@@ -93,6 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.attempt_repository = AttemptRepository(database)
     app.state.problem_index = ProblemIndex(database)
     app.state.usage_ledger = UsageLedger(database)
+    app.state.adaptive_planner = AdaptivePlanner()
 
     # Index the problem packages that already exist on disk.
     _sync_problem_index(app)

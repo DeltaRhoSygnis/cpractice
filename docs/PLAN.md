@@ -192,6 +192,7 @@ attempts, and hidden-data separation.
 - [x] M4 — AI problem generation
 - [x] M5 — Learning feedback
 - [x] M6 — Quota resilience and history
+- [x] M7 — Adaptive practice
 - [ ] M7 — Adaptive practice
 - [ ] M8 — Hosted deployment readiness
 
@@ -434,3 +435,42 @@ GET /api/attempts -> 3 attempts, newest first
 GET /api/progress -> attempts=3 solved=1 pass_rate=0.333 (6/18)
 GET /api/usage    -> provider=kenari, budget unlimited
 ```
+
+### M7 delivered
+
+| File | Purpose |
+|---|---|
+| `app/services/adaptive_service.py` | topic evidence, weak-topic ranking, evidence-cited recommendations |
+| `app/api/progress.py` | `GET /api/recommendations` |
+
+**M7 done-when:** the system can recommend a relevant exercise based on
+recorded evidence rather than simply increasing difficulty.
+
+#### Rules
+
+* A topic needs a **minimum sample** (default 2 attempts) before it counts as a
+  weakness. One failure is not evidence.
+* Recommendations cite the observed counts they rest on
+  (`"You have failed 2 of 2 attempts on 'arithmetic'"`).
+* With no history the endpoint returns **exploratory** suggestions, explicitly
+  labelled `exploratory: true` with a reason stating that there is no
+  performance history. The distinction is never hidden.
+* Solved problems are excluded.
+* Ordering is deterministic (failure rate, then absolute failures, then name).
+
+#### Live verification
+
+```
+no history        -> evidence_based=false, 1 exploratory suggestion
+2 failed attempts -> evidence_based=true,
+                     reason: "You have failed 2 of 2 attempts on 'arithmetic'",
+                     evidence {attempts:2, failures:2, failure_rate:1.0}
+```
+
+#### Review-driven fix
+
+Council review flagged that normalisation could silently change the test set.
+Confirmed and fixed: duplicate test ids are now de-duplicated deterministically
+(first occurrence wins) and the loss is recorded in `normalization_notes`,
+which the pipeline logs and removes before schema validation. Regression tests
+added.
