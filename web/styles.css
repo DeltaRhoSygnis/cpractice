@@ -310,6 +310,12 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .badge--warn { color: var(--warn); border-color: currentColor; }
 .badge--info { color: var(--accent-text); border-color: currentColor; }
 
+/* --- learning objective meta (role + prerequisites) --- */
+.objective-meta { display: grid; gap: var(--sp-2); margin: 0 0 var(--sp-3); }
+.meta-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); }
+.meta-line .caption { margin-bottom: 0; flex: 0 0 auto; }
+.badge-row { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
+
 /* --- test results (signature: the compiler strip) --- */
 .test-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
 .test-row {

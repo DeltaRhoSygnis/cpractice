@@ -132,6 +132,18 @@ const FAILURE_LABEL = {
   internal_error: "grader error",
 };
 
+/* Learner-facing labels for the pedagogy `exercise_role` enum
+   (app/schemas/pedagogy.py::ExerciseRole). "core_reasoning" is the vocabulary a
+   reviewer uses, not a learner. */
+const ROLE_LABEL = {
+  core_reasoning: "core reasoning",
+  diagnostic_warmup: "warm-up",
+  transfer: "transfer problem",
+  challenge: "challenge",
+  debugging: "debugging",
+  reflection: "reflection",
+};
+
 /** "3 attempts" / "1 attempt" — never the machine-flavoured "(s)". */
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
@@ -522,6 +534,10 @@ views.problem = async (problemId) => {
     ]),
   );
 
+  // --- learning objective (only when the problem declares pedagogy) ---
+  const objectiveCard = renderObjectiveCard(problem.pedagogy);
+  if (objectiveCard) container.append(objectiveCard);
+
   // --- statement ---
   const statementCard = el("div", { class: "card" }, [el("h2", { text: "Problem statement" })]);
   statementCard.append(el("div", { class: "small", html: renderMarkdown(problem.statement_md) }));
@@ -839,6 +855,73 @@ function attemptTable(attempts) {
     );
   }
   return list;
+}
+
+/**
+ * "Learning objective" card, built from a problem's optional pedagogy block.
+ *
+ * The backend only sends `pedagogy` when the problem declares one (older and
+ * hand-authored problems omit it), so an absent or empty block must yield no
+ * card at all rather than an empty heading. `solution_outline` is deliberately
+ * never read here: the API withholds it so the intended approach stays hidden.
+ */
+function renderObjectiveCard(pedagogy) {
+  if (!pedagogy) return null;
+
+  const hasContent =
+    (pedagogy.primary_objective || "").trim() ||
+    (pedagogy.exercise_role || "").trim() ||
+    (pedagogy.prerequisites || []).length ||
+    (pedagogy.target_reasoning_moves || []).length ||
+    (pedagogy.transfer_goal || "").trim();
+  if (!hasContent) return null;
+
+  const card = el("div", { class: "card" }, [el("h2", { text: "Learning objective" })]);
+
+  if ((pedagogy.primary_objective || "").trim()) {
+    card.append(el("p", { text: pedagogy.primary_objective }));
+  }
+
+  // Role and prerequisites are machine vocabulary; show legible labels/badges.
+  const meta = [];
+  const role = (pedagogy.exercise_role || "").trim();
+  if (role) {
+    meta.push(
+      el("div", { class: "meta-line" }, [
+        el("span", { class: "caption", text: "Role" }),
+        el("span", {
+          class: "badge badge--info",
+          text: ROLE_LABEL[role] || role.replace(/_/g, " "),
+        }),
+      ]),
+    );
+  }
+  const prerequisites = pedagogy.prerequisites || [];
+  if (prerequisites.length) {
+    meta.push(
+      el("div", { class: "meta-line" }, [
+        el("span", { class: "caption", text: "Builds on" }),
+        el("span", { class: "badge-row" }, prerequisites.map((prereq) =>
+          el("span", {
+            class: "badge",
+            text: String(prereq).replace(/_/g, " "),
+          }))),
+      ]),
+    );
+  }
+  if (meta.length) card.append(el("div", { class: "objective-meta" }, meta));
+
+  const moves = pedagogy.target_reasoning_moves || [];
+  if (moves.length) {
+    card.append(el("h3", { text: "What you'll practise" }));
+    card.append(el("ul", {}, moves.map((move) => el("li", { text: move }))));
+  }
+
+  if ((pedagogy.transfer_goal || "").trim()) {
+    card.append(el("p", { class: "small muted", text: pedagogy.transfer_goal }));
+  }
+
+  return card;
 }
 
 function renderResult(result) {

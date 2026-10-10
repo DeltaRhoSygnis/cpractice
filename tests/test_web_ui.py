@@ -295,6 +295,23 @@ def test_verdict_and_failure_labels_match_backend_enums() -> None:
         assert f'{category}:' in script, f"FAILURE_LABEL missing {category!r}"
 
 
+def test_pedagogy_renders_learning_objective_card() -> None:
+    """The problem workspace must render the optional pedagogy block.
+
+    The API sends `pedagogy` (primary objective, role, prerequisites, reasoning
+    moves, transfer goal) but the UI used to ignore it. The card must map the
+    `exercise_role` enum to a learner-facing label rather than raw snake_case.
+    """
+    script = (WEB / "app.js").read_text(encoding="utf-8")
+
+    assert "pedagogy" in script
+    assert "primary_objective" in script
+    assert "target_reasoning_moves" in script
+    # The role enum is shown as a human label, not the machine value.
+    assert "core reasoning" in script
+    assert "ROLE_LABEL" in script
+
+
 def test_error_card_uses_http_status_not_message_regex() -> None:
     """Server-vs-client failures are classified by status, not string guessing."""
     script = (WEB / "app.js").read_text(encoding="utf-8")
