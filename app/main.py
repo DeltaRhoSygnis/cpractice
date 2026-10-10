@@ -14,8 +14,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.api import health
+from app.api import health, problems
 from app.config import Settings, get_settings
+from app.services.problem_service import ProblemService
+from app.storage.problem_repository import ProblemRepository
 
 logger = logging.getLogger("cpractice")
 
@@ -56,9 +58,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.problem_service = ProblemService(ProblemRepository(settings.problems_path))
 
     # --- API routes ---
     app.include_router(health.router, prefix="/api")
+    app.include_router(problems.router, prefix="/api")
 
     # --- Static frontend ---
     # Mounted last so it never shadows /api routes.
