@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from app.grading.evaluator import Evaluator, GradingConfig
+from app.generation.calibration import CalibrationChecker
 from app.generation.mutation import MutationTester, mutation_finding
 from app.schemas.grading import ResultCategory
 from app.schemas.problem import Problem, ProblemStatus
@@ -63,6 +64,8 @@ class QualityReport:
     reference_total: int = 0
     #: Mutation testing result, when it ran.
     mutation: dict | None = None
+    #: Calibration result, when it ran.
+    calibration: dict | None = None
 
     @property
     def errors(self) -> list[Finding]:
@@ -85,27 +88,38 @@ class QualityReport:
             "reference_passed": self.reference_passed,
             "reference_total": self.reference_total,
             "mutation": self.mutation,
+            "calibration": self.calibration,
             "findings": [f.to_dict() for f in self.findings],
         }
 
 
 class QualityGate:
-    """Validates generated or loaded problems before publication."""
+    """Validates generated or loaded problems before publication.
+
+    ``calibration_enabled`` controls the top-level quality standard (see
+    ``app/ai/prompts/calibration.md``). It is enabled for generated problems,
+    where it is the main defence against a stream of single-move exercises.
+    It can be disabled when validating legacy or deliberately simple content,
+    where the standard would reject otherwise-correct packages.
+    """
 
     def __init__(
         self,
         evaluator: Evaluator | None = None,
         *,
         mutation_enabled: bool = True,
+        calibration_enabled: bool = False,
     ) -> None:
         self.evaluator = evaluator or Evaluator()
         self.mutation_tester = MutationTester(self.evaluator, enabled=mutation_enabled)
+        self.calibration_enabled = calibration_enabled
 
     def check(self, problem: Problem) -> QualityReport:
         """Run every structural and behavioural check."""
         report = QualityReport(problem_id=problem.id)
 
         self._check_structure(problem, report)
+        self._check_pedagogy(problem, report)
         self._check_resource_limits(problem, report)
         self._check_reference(problem, report)
 
@@ -113,6 +127,7 @@ class QualityGate:
         # otherwise every mutant would fail for the same underlying reason.
         if report.reference_compiled and not report.errors:
             self._check_mutations(problem, report)
+            self._check_calibration(problem, report)
 
         return report
 
@@ -205,6 +220,103 @@ class QualityGate:
                         Severity.WARNING,
                     )
                 )
+
+    # -- pedagogy ----------------------------------------------------------
+
+    def _check_pedagogy(self, problem: Problem, report: QualityReport) -> None:
+        """Check the pedagogical metadata is present and coherent.
+
+        A problem with no pedagogy block is legacy content and is not penalised.
+        A problem that *declares* an objective is held to it.
+        """
+        pedagogy = problem.pedagogy
+        if pedagogy is None:
+            return
+
+        if not pedagogy.primary_objective.strip():
+            report.findings.append(
+                Finding(
+                    "missing-objective",
+                    "pedagogy declares no primary_objective",
+                    Severity.WARNING,
+                )
+            )
+        else:
+            # A topic label is not an objective: it must describe an action.
+            objective = pedagogy.primary_objective.lower()
+            action_words = (
+                "derive", "identify", "choose", "trace", "maintain", "decompose",
+                "recognise", "recognize", "validate", "classify", "compute",
+                "determine", "handle", "construct", "scan", "verify", "apply",
+            )
+            if not any(word in objective for word in action_words):
+                report.findings.append(
+                    Finding(
+                        "vague-objective",
+                        (
+                            "primary_objective does not describe an observable action; "
+                            f"got {pedagogy.primary_objective!r}"
+                        ),
+                        Severity.WARNING,
+                    )
+                )
+
+        required = pedagogy.required_move_count()
+        declared = len(pedagogy.target_reasoning_moves)
+        if declared < required:
+            report.findings.append(
+                Finding(
+                    "insufficient-reasoning-moves",
+                    (
+                        f"role {pedagogy.exercise_role.value} requires "
+                        f"{required} reasoning move(s); {declared} declared"
+                    ),
+                    Severity.ERROR,
+                )
+            )
+
+        # Every declared misconception should be caught by some test.
+        if pedagogy.likely_misconceptions:
+            tagged = {
+                mid
+                for test in problem.tests
+                for mid in test.misconception_ids
+            }
+            if not tagged and problem.tests:
+                report.findings.append(
+                    Finding(
+                        "misconceptions-untested",
+                        (
+                            f"{len(pedagogy.likely_misconceptions)} misconception(s) "
+                            "declared but no test is tagged to any of them"
+                        ),
+                        Severity.WARNING,
+                    )
+                )
+
+    # -- calibration -------------------------------------------------------
+
+    def _check_calibration(self, problem: Problem, report: QualityReport) -> None:
+        """Check the problem meets the documented quality standard.
+
+        This is the mechanical answer to "is this actually a good exercise?".
+        It detects the documented failure mode: a single reasoning move whose
+        tests are the same shape with different numbers.
+        """
+        if not self.calibration_enabled:
+            return
+
+        result = CalibrationChecker().check(problem)
+        report.calibration = result.to_dict()
+
+        for finding in result.findings:
+            report.findings.append(
+                Finding(
+                    f"calibration:{finding.concern.value}",
+                    finding.message,
+                    Severity.ERROR if finding.fatal else Severity.WARNING,
+                )
+            )
 
     def _check_resource_limits(self, problem: Problem, report: QualityReport) -> None:
         time_limit = problem.metadata.time_limit_ms

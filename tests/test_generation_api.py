@@ -1,4 +1,9 @@
-"""Tests for the generation API endpoint."""
+"""Tests for the generation API endpoint.
+
+The payload reuses the calibrated fixture from the pipeline tests: the pipeline
+now enforces the calibration standard, so a single-reasoning-move exercise would
+be rejected here rather than proving anything about the endpoint.
+"""
 
 from __future__ import annotations
 
@@ -13,29 +18,14 @@ from app.ai.mock import MockProvider, failing_provider
 from app.config import Settings
 from app.generation.pipeline import GenerationPipeline
 from app.main import create_app
+from tests.test_generation_pipeline import good_payload as _calibrated_payload
 
-REFERENCE = (
-    '#include <stdio.h>\n'
-    'int main(void){int a,b;if(scanf("%d %d",&a,&b)!=2)return 1;'
-    'printf("%d\\n",a+b);return 0;}\n'
+REFERENCE = _calibrated_payload()["reference_solution"]
+
+PAYLOAD = _calibrated_payload(
+    id="c-api-running-max",
+    title="API Running Maximum",
 )
-
-PAYLOAD = {
-    "id": "c-api-sum",
-    "title": "API Sum",
-    "difficulty": "beginner",
-    "topics": ["arithmetic"],
-    "statement_md": "# Sum\n\nRead two ints and print the sum.",
-    "starter_code": "int main(void){return 0;}",
-    "reference_solution": REFERENCE,
-    "tests": [
-        {"id": "a", "name": "A", "visibility": "public", "stdin": "1 2\n", "expected_stdout": "3\n"},
-        {"id": "b", "name": "B", "visibility": "public", "stdin": "-1 -2\n", "expected_stdout": "-3\n"},
-        {"id": "c", "name": "C", "visibility": "hidden", "stdin": "0 0\n", "expected_stdout": "0\n"},
-        {"id": "d", "name": "D", "visibility": "hidden", "stdin": "1000 2000\n", "expected_stdout": "3000\n"},
-    ],
-    "hints": [{"level": i, "text": f"hint {i}"} for i in range(1, 6)],
-}
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -101,9 +91,9 @@ def test_generate_succeeds_with_mock_provider(client_with_mock) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["accepted"] is True
-    assert body["problem_id"] == "c-api-sum"
+    assert body["problem_id"] == "c-api-running-max"
     assert body["status"] == "validated"
-    assert body["reference"]["passed"] == 4
+    assert body["reference"]["passed"] == 6
     assert body["errors"] == []
 
 
@@ -113,17 +103,17 @@ def test_generated_problem_is_listed_afterwards(client_with_mock) -> None:
 
     listing = client.get("/api/problems").json()
 
-    assert "c-api-sum" in [p["id"] for p in listing["problems"]]
+    assert "c-api-running-max" in [p["id"] for p in listing["problems"]]
 
 
 def test_generated_problem_is_fetchable(client_with_mock) -> None:
     client, _ = client_with_mock
     client.post("/api/problems/generate", json={})
 
-    response = client.get("/api/problems/c-api-sum")
+    response = client.get("/api/problems/c-api-running-max")
 
     assert response.status_code == 200
-    assert response.json()["title"] == "API Sum"
+    assert response.json()["title"] == "API Running Maximum"
 
 
 def test_second_request_reports_cache_hit(client_with_mock) -> None:
