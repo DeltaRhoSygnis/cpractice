@@ -38,7 +38,17 @@ compilation and execution work without the Termux `noexec`-filesystem limitation
    # edit .env -> GOOGLE_API_KEY=<your key>
    ```
 
-   Or set it as an encrypted **Codespaces secret** named `GOOGLE_API_KEY`.
+   In Codespaces you normally **don't** need this: the repo-scoped secret
+   `GEMINI_API_KEY` is injected automatically and mapped to `GOOGLE_API_KEY`
+   by the devcontainer. Secrets are only injected when the container is
+   **created or rebuilt** after the secret exists — after adding a secret, run
+   *Command Palette → Codespaces: Rebuild Container*.
+
+   Verify with:
+
+   ```bash
+   bash .devcontainer/setup.sh   # prints [ok]/[!] for each secret
+   ```
 
 4. Start the server:
 
