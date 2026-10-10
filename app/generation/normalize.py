@@ -232,6 +232,14 @@ def _collect_tests(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     collected.append(dict(item))
 
     # Split public/hidden lists: annotate visibility rather than merging blindly.
+    # "Explicit" means the list actually contributes a dict test - a non-empty
+    # list of junk (``["public"]``) must not count as a real split, or it would
+    # suppress the default below and re-collapse the suite to all-public.
+    explicit_split = any(
+        isinstance(payload.get(key), list)
+        and any(isinstance(item, dict) for item in payload[key])
+        for key in ("public_tests", "hidden_tests")
+    )
     for key, visibility in (("public_tests", "public"), ("hidden_tests", "hidden")):
         value = payload.get(key)
         if isinstance(value, list):
@@ -241,7 +249,57 @@ def _collect_tests(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     entry.setdefault("visibility", visibility)
                     collected.append(entry)
 
-    return [_normalize_test(item, index) for index, item in enumerate(collected)]
+    # Capture whether the model expressed *any* usable per-test visibility
+    # intent, before ``_normalize_test`` defaults the field. A null or unknown
+    # value is *not* intent: it normalises to public, so counting its mere
+    # presence would let one junk field suppress the split entirely.
+    explicit_visibility = any(
+        _is_real_visibility(item.get("visibility")) for item in collected
+    )
+
+    normalized = [_normalize_test(item, index) for index, item in enumerate(collected)]
+
+    # A single flat ``tests`` list carries no visibility signal at all. If the
+    # model did not split public/hidden *and* tagged no individual test, every
+    # test would default to public and the package would fail the gate's
+    # "at least two hidden tests" rule for a purely cosmetic reason. Restore a
+    # documented split (rule 4 of the system prompt: >=3 public, >=2 hidden)
+    # deterministically rather than inventing one per test.
+    if not explicit_split and not explicit_visibility:
+        _apply_default_visibility_split(normalized)
+
+    return normalized
+
+
+def _is_real_visibility(value: Any) -> bool:
+    """True when a value is a visibility the schema would accept.
+
+    ``None`` and unknown strings both normalise to ``public``, but they are not
+    a deliberate choice, so they must not count as an explicit signal.
+    """
+    if not isinstance(value, str):
+        return False
+    token = value.strip().lower()
+    return token in ("public", "hidden")
+
+
+def _apply_default_visibility_split(tests: list[dict[str, Any]]) -> None:
+    """Mark the trailing tests hidden when the model gave no signal.
+
+    Only the *last* tests are made hidden: the leading tests are the ones an
+    author would use as illustrative public examples, so this matches the
+    documented intent (few public examples, larger hidden suite) instead of
+    making an arbitrary choice. A test that explicitly declared ``public`` is
+    never touched - normalisation does not overrule the model's own choice.
+    """
+    if len(tests) < 4:
+        return
+
+    # Keep the first few as public examples; everything after is hidden.
+    # At least two must remain public and two hidden to satisfy the gate.
+    public_count = max(2, len(tests) // 3)
+    for test in tests[public_count:]:
+        test["visibility"] = "hidden"
 
 
 def _normalize_test(test: dict[str, Any], index: int) -> dict[str, Any]:

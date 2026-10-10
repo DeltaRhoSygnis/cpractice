@@ -100,9 +100,25 @@ trailing newlines.
 the final C code.
 8. Output must be valid JSON matching the provided schema. No prose outside \
 the JSON.
+9. Every test must carry `requirement_ids` and `misconception_ids`. Use the \
+EXACT id strings declared in the blueprint's `likely_misconceptions` (the \
+leading `MIS-...` token) so the package can prove each misconception is \
+exercised.
 
-Correctness beats cleverness. A simpler exercise with correct tests is always \
-better than an ambitious one with inconsistent tests."""
+Consistency rules you must not break:
+10. State the task once and mean it. Do not narrate doubt, self-correct, or \
+write phrases such as "wait", "actually", or "correcting" anywhere in the \
+statement, examples, or explanations.
+11. Every example must be correct for the stated contract. Work each example \
+out by hand from the specification before writing its expected output; an \
+example that disagrees with the contract is a fatal error.
+12. The examples, the tests, and the reference solution must all describe the \
+same behaviour. If the reference and an expected value disagree, the package \
+is wrong - fix it before replying, do not ship the disagreement.
+
+Correctness beats cleverness. A simpler exercise with correct, mutually \
+consistent statement, examples, tests, and reference is always better than an \
+ambitious one with any inconsistency."""
 
 
 @dataclass(frozen=True)
@@ -149,9 +165,18 @@ Create one C programming exercise with these parameters:
 - Forbidden constructs: {forbidden}
 - Include progressive hints: {"yes" if request.hints_enabled else "no"}
 
-Deliver the exercise as JSON matching the schema. Ensure the reference \
-solution would pass every test you list. Include boundary cases among the \
-hidden tests."""
+Before returning, verify your own package:
+- Re-read the statement and confirm every example agrees with it. Do not leave
+  any example that you had to "correct" mid-thought; recompute and state the
+  right answer once.
+- Confirm the reference solution produces exactly the expected output for every
+  test, and that examples and tests do not contradict each other.
+- Confirm each test carries `requirement_ids` and `misconception_ids`, using the
+  blueprint's declared `MIS-...` ids.
+
+Deliver the exercise as JSON matching the schema. Include boundary cases among
+the hidden tests, and make sure there are at least three public and at least
+two hidden tests."""
 
 
 def build_repair_prompt(

@@ -523,6 +523,7 @@ def test_backfill_is_a_no_op_when_all_tests_are_tagged() -> None:
         metadata=ProblemMetadata(id="p", title="P"),
         statement_md="x",
         tests=[TestCase(id="a", name="A", stdin="1\n", expected_stdout="x\n",
+                        requirement_ids=["REQ-X"],
                         misconception_ids=["MIS-X"])],
     )
 
@@ -542,3 +543,136 @@ def test_pipeline_backfills_tags_on_generated_problem(tmp_path: Path) -> None:
 
     assert outcome.accepted is True
     assert all(t.is_tagged for t in outcome.problem.tests)
+
+
+# --- misconception linkage -------------------------------------------------
+
+
+def test_misconception_id_reuses_declared_prefix() -> None:
+    from app.generation.misconceptions import misconception_id
+
+    assert misconception_id("MIS-OFF-BY-ONE: one extra iteration") == "MIS-OFF-BY-ONE"
+
+
+def test_misconception_id_is_derived_from_prose() -> None:
+    from app.generation.misconceptions import misconception_id
+
+    derived = misconception_id("using a separately computed string length")
+    assert derived.startswith("MIS-")
+    assert derived == misconception_id("using a separately computed string length")
+
+
+def test_misconception_id_is_length_clamped() -> None:
+    from app.generation.misconceptions import misconception_id
+
+    long_id = "MIS-" + "A" * 180 + ": detail"
+    assert len(misconception_id(long_id)) <= 48
+
+
+def test_declared_misconception_ids_are_deduplicated() -> None:
+    from app.generation.misconceptions import declared_misconception_ids
+    from app.schemas.pedagogy import Pedagogy
+
+    pedagogy = Pedagogy(
+        likely_misconceptions=[
+            "MIS-OFF-BY-ONE: extra iteration",
+            "MIS-OFF-BY-ONE: same id again",
+        ]
+    )
+
+    assert declared_misconception_ids(pedagogy) == ["MIS-OFF-BY-ONE"]
+
+
+def test_backfill_attributes_declared_misconceptions() -> None:
+    """An untagged suite must not make the coverage check unsatisfiable."""
+    from app.generation.misconceptions import declared_misconception_ids
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.pedagogy import Pedagogy
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase
+
+    pedagogy = Pedagogy(
+        likely_misconceptions=[
+            "MIS-OFF-BY-ONE: extra iteration",
+            "MIS-INIT-ZERO: wrong starting value",
+        ]
+    )
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        pedagogy=pedagogy,
+        tests=[
+            TestCase(id=f"t{i}", name=f"T{i}", stdin=f"{i}\n", expected_stdout="x\n")
+            for i in range(1, 5)
+        ],
+    )
+
+    result = _backfill_test_tags(problem)
+
+    tagged = {t.misconception_ids[0] for t in result.tests if t.misconception_ids}
+    assert tagged == set(declared_misconception_ids(pedagogy))
+
+
+def test_backfill_fills_misconceptions_when_requirements_exist() -> None:
+    """The axes are independent: a test with only requirement_ids still gets one."""
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.pedagogy import Pedagogy
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase
+
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        pedagogy=Pedagogy(likely_misconceptions=["MIS-A: x", "MIS-B: y"]),
+        tests=[
+            TestCase(
+                id="a", name="A", stdin="1\n", expected_stdout="x\n",
+                requirement_ids=["REQ-SPECIFIC"],
+            ),
+        ],
+    )
+
+    result = _backfill_test_tags(problem)
+
+    # Model-supplied requirement tag preserved, missing axis filled.
+    assert result.tests[0].requirement_ids == ["REQ-SPECIFIC"]
+    assert result.tests[0].misconception_ids == ["MIS-A"]
+
+
+def test_backfill_does_not_touch_an_existing_misconception_tag() -> None:
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.pedagogy import Pedagogy
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase
+
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        pedagogy=Pedagogy(likely_misconceptions=["MIS-A: x"]),
+        tests=[
+            TestCase(
+                id="a", name="A", stdin="1\n", expected_stdout="x\n",
+                misconception_ids=["MIS-MODEL-CHOICE"],
+            ),
+        ],
+    )
+
+    result = _backfill_test_tags(problem)
+
+    assert result.tests[0].misconception_ids == ["MIS-MODEL-CHOICE"]
+
+
+def test_backfill_leaves_misconceptions_empty_without_pedagogy() -> None:
+    from app.generation.pipeline import _backfill_test_tags
+    from app.schemas.problem import Problem, ProblemMetadata
+    from app.schemas.test_case import TestCase
+
+    problem = Problem(
+        metadata=ProblemMetadata(id="p", title="P"),
+        statement_md="x",
+        tests=[TestCase(id="a", name="A", stdin="1\n", expected_stdout="x\n")],
+    )
+
+    result = _backfill_test_tags(problem)
+
+    assert result.tests[0].misconception_ids == []

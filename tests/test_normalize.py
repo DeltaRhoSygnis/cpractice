@@ -211,6 +211,86 @@ def test_unknown_visibility_defaults_to_public() -> None:
     assert out["tests"][0]["visibility"] == "public"
 
 
+# --- flat test list visibility split --------------------------------------
+
+
+def _flat_tests(count: int) -> list[dict]:
+    return [
+        {"id": f"t{i}", "name": f"T{i}", "input": f"{i}", "expected_output": f"{i}\n"}
+        for i in range(1, count + 1)
+    ]
+
+
+def test_flat_test_list_gets_a_hidden_split() -> None:
+    """A model that emits one flat ``tests`` list tags no visibility at all.
+
+    Every test would otherwise default to public and the package would fail the
+    gate's "at least two hidden tests" rule for a cosmetic reason.
+    """
+    out = normalize_payload({"id": "x", "title": "T", "tests": _flat_tests(6)})
+
+    visibilities = [t["visibility"] for t in out["tests"]]
+    assert visibilities.count("hidden") >= 2
+    assert visibilities.count("public") >= 2
+
+
+def test_flat_list_split_keeps_trailing_tests_hidden() -> None:
+    out = normalize_payload({"id": "x", "title": "T", "tests": _flat_tests(6)})
+
+    assert [t["visibility"] for t in out["tests"][-2:]] == ["hidden", "hidden"]
+
+
+def test_flat_list_with_explicit_visibility_is_not_overridden() -> None:
+    """An explicit ``public`` on every test is the model's choice, not a gap."""
+    tests = _flat_tests(6)
+    for test in tests:
+        test["visibility"] = "public"
+
+    out = normalize_payload({"id": "x", "title": "T", "tests": tests})
+
+    assert all(t["visibility"] == "public" for t in out["tests"])
+
+
+def test_null_visibility_does_not_suppress_the_split() -> None:
+    """A null/unknown value is not intent; it must not block the default split."""
+    for junk in (None, "weird", "", 7):
+        tests = _flat_tests(6)
+        tests[0]["visibility"] = junk
+
+        out = normalize_payload({"id": "x", "title": "T", "tests": tests})
+
+        visibilities = [t["visibility"] for t in out["tests"]]
+        assert visibilities.count("hidden") >= 2, f"junk={junk!r} suppressed the split"
+
+
+def test_junk_public_list_does_not_suppress_the_split() -> None:
+    """A non-empty split list with no usable dict entries is not a real split."""
+    out = normalize_payload({
+        "id": "x", "title": "T",
+        "tests": _flat_tests(6),
+        "public_tests": ["not-a-dict"],
+    })
+
+    visibilities = [t["visibility"] for t in out["tests"]]
+    assert visibilities.count("hidden") >= 2
+
+
+def test_split_lists_are_not_re_split() -> None:
+    out = normalize_payload(
+        real_world_payload()
+    )
+
+    # The real-world payload declares one public and one hidden test.
+    assert [t["visibility"] for t in out["tests"]] == ["public", "hidden"]
+
+
+def test_small_flat_list_is_left_alone() -> None:
+    """Too few tests to split meaningfully; the gate reports the shortfall."""
+    out = normalize_payload({"id": "x", "title": "T", "tests": _flat_tests(2)})
+
+    assert all(t["visibility"] == "public" for t in out["tests"])
+
+
 # --- robustness ------------------------------------------------------------
 
 
