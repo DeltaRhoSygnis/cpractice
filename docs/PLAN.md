@@ -534,3 +534,46 @@ arrays/intermediate -> REJECTED: generated reference failed 4/8 of its own tests
 
 The second case is the point of the feature: an internally inconsistent
 AI-generated problem was caught before a learner ever saw it.
+
+### M9 — Web UI
+
+The engine had no interface: `web/` was still the M1 status page. This turns
+CPractice into something usable.
+
+| File | Purpose |
+|---|---|
+| `web/index.html` | shell, nav, skip link, single main landmark |
+| `web/styles.css` | one stylesheet; light/dark via `prefers-color-scheme` |
+| `web/app.js` | hash router, API client, views, safe Markdown renderer |
+
+#### Screens
+
+* **Dashboard** — system status, generate a problem, recommendations, recent attempts.
+* **Problems** — list of saved packages.
+* **Problem workspace** — statement, public examples, code editor, submit,
+  test report, hint ladder, solution reveal.
+* **Progress** — summary stats, weak topics, failure categories, attempt
+  history, provider usage.
+
+#### Constraints honoured
+
+* Plain HTML/CSS/JS — no framework, no build step, **no external requests**
+  (asserted by a test that greps for `http://`, `https://`, `cdn.`).
+* Pass/fail is signalled by **icon + text + colour**, never colour alone.
+* Drafts persist in `localStorage`, so a mistake is not lost on reload.
+* Hidden tests are named but explicitly marked "details are not shown"; the API
+  never sends their content.
+
+#### Safety
+
+Problem statements are model-generated, so Markdown rendering **escapes HTML
+first** and only then applies headings, lists, code, and emphasis. Verified
+against adversarial input (`<script>`, `<img onerror>`, `javascript:` URLs,
+`<svg onload>`) - no raw HTML survives.
+
+#### Verification
+
+* `446` platform tests pass, including 18 UI-contract tests asserting the asset
+  responses and the API shapes each view renders.
+* Full flow exercised over HTTP: dashboard data, open problem, submit wrong
+  code (hidden details withheld), hint ladder, submit correct code, progress.
