@@ -1,4 +1,8 @@
 {
   "name": "CPractice",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm"
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {}
+  }
 }
