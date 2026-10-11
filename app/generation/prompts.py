@@ -105,14 +105,24 @@ EXACT id strings declared in the blueprint's `likely_misconceptions` (the \
 leading `MIS-...` token) so the package can prove each misconception is \
 exercised.
 
+Distribution code (`starter_code`) rules you must follow:
+10. The starter code MUST compile cleanly as C11 (the learner can run the \
+checker immediately). It may be incomplete, but it must be valid C.
+11. The starter code MUST NOT pass the tests on its own. It must be missing at \
+least one piece of real logic, so completing it is the task.
+12. The starter code MUST contain at least one `TODO` comment marking exactly \
+what the learner has to implement. Mark missing decisions, not formatting.
+13. The starter code MUST NOT be the reference solution. Never ship the answer \
+as the starter.
+
 Consistency rules you must not break:
-10. State the task once and mean it. Do not narrate doubt, self-correct, or \
+14. State the task once and mean it. Do not narrate doubt, self-correct, or \
 write phrases such as "wait", "actually", or "correcting" anywhere in the \
 statement, examples, or explanations.
-11. Every example must be correct for the stated contract. Work each example \
+15. Every example must be correct for the stated contract. Work each example \
 out by hand from the specification before writing its expected output; an \
 example that disagrees with the contract is a fatal error.
-12. The examples, the tests, and the reference solution must all describe the \
+16. The examples, the tests, and the reference solution must all describe the \
 same behaviour. If the reference and an expected value disagree, the package \
 is wrong - fix it before replying, do not ship the disagreement.
 
@@ -173,6 +183,8 @@ Before returning, verify your own package:
   test, and that examples and tests do not contradict each other.
 - Confirm each test carries `requirement_ids` and `misconception_ids`, using the
   blueprint's declared `MIS-...` ids.
+- Confirm `starter_code` compiles as C11, contains at least one `TODO` comment,
+  does NOT pass the tests on its own, and is not the reference solution.
 
 Deliver the exercise as JSON matching the schema. Include boundary cases among
 the hidden tests, and make sure there are at least three public and at least

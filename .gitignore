@@ -29,6 +29,9 @@ workspaces/*
 problems/*
 !problems/c-sum-two-integers/
 problems/c-sum-two-integers/quality_report.json
+# Hand-authored problem-set fixture proving the distribution-code contract (S4).
+!problems/pset-vote-tally/
+problems/pset-vote-tally/quality_report.json
 
 # --- OS / editor ---
 .DS_Store

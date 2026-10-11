@@ -16,7 +16,7 @@ PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 #: Bump when any prompt asset changes materially. Recorded on generated
 #: problems so a package's provenance is traceable.
-PROMPT_VERSION = "2.0.0"
+PROMPT_VERSION = "2.1.0"
 
 #: Logical name -> asset filename.
 ASSETS = {

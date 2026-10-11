@@ -124,3 +124,73 @@ def test_validate_skills_splits_known_and_unknown() -> None:
 
 def test_no_unknown_skills_in_the_shipped_map() -> None:
     assert unknown_skills(list(SKILLS)) == []
+
+
+# --- concept ladder (problem-set engine, spec S3) --------------------------
+
+
+def test_concept_tags_covers_every_stage_concept() -> None:
+    from app.services.curriculum import concept_tags
+
+    assert set(concept_tags()) == {
+        concept for stage in STAGES for concept in stage.concepts
+    }
+
+
+def test_stage_index_for_concept() -> None:
+    from app.services.curriculum import stage_index_for_concept
+
+    assert stage_index_for_concept("expressions") == 0
+    assert stage_index_for_concept("pointers") == 9
+    assert stage_index_for_concept("not_a_concept") is None
+
+
+def test_frontier_with_empty_checklist_is_stage_zero() -> None:
+    from app.services.curriculum import frontier
+
+    assert frontier([]) == 0
+
+
+def test_frontier_with_partial_checklist() -> None:
+    from app.services.curriculum import frontier
+
+    # All of stage 0 and stage 1 are checked; stage 2 is not.
+    checklist = ["expressions", "types", "input_output", "if_else", "boolean_expressions"]
+
+    assert frontier(checklist) == 2
+
+
+def test_frontier_ignores_unknown_tags() -> None:
+    from app.services.curriculum import frontier
+
+    # An unknown tag must not widen the "known" set.
+    assert frontier(["nonsense"]) == 0
+
+
+def test_frontier_with_full_checklist_is_none() -> None:
+    from app.services.curriculum import concept_tags, frontier
+
+    assert frontier(list(concept_tags())) is None
+
+
+def test_forbidden_set_is_everything_above_the_frontier() -> None:
+    from app.services.curriculum import forbidden_set, stage_index_for_concept
+
+    # Stage 0 is checked, so the frontier is stage 1.
+    forbidden = forbidden_set(["expressions", "types", "input_output"])
+
+    assert all(stage_index_for_concept(tag) > 1 for tag in forbidden)
+    assert "for_loops" in forbidden  # stage 2 is above the stage-1 frontier
+    assert "if_else" not in forbidden  # stage 1 is *at* the frontier, not above
+
+
+def test_forbidden_set_empty_when_ladder_complete() -> None:
+    from app.services.curriculum import concept_tags, forbidden_set
+
+    assert forbidden_set(list(concept_tags())) == frozenset()
+
+
+def test_unknown_concepts_are_reported() -> None:
+    from app.services.curriculum import unknown_concepts
+
+    assert unknown_concepts(["arrays", "made_up", "made_up"]) == ["made_up"]
