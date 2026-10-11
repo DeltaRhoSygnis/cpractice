@@ -17,6 +17,7 @@ from app.ai.base import (
     ProviderUnavailableError,
     RateLimitError,
 )
+from app.api.preferences import KnownConceptsStore
 from app.generation.pipeline import GenerationError
 from app.generation.prompts import GenerationRequest
 from app.schemas.pedagogy import ExerciseRole
@@ -43,6 +44,26 @@ class GenerateRequest(BaseModel):
     )
     #: Concepts the learner already knows; nothing else is required.
     prerequisites: list[str] = Field(default_factory=list, max_length=12)
+    #: ``exercise`` (default) or ``problem_set`` (spec S7).
+    kind: str = Field(default="exercise", pattern="^(exercise|problem_set)$")
+    #: The one new concept a problem set introduces. Required for problem sets.
+    new_concept: str = Field(default="", max_length=64)
+    #: Known concepts the new one is combined with. Required for problem sets.
+    assumed_known: list[str] = Field(default_factory=list, max_length=12)
+
+
+def _known_concepts(request: Request) -> list[str]:
+    """The learner's stored checklist, or empty when none has been saved.
+
+    The checklist is the explicit "known" side of the concept ladder (spec S3)
+    and is the source of truth for problem-set legality. Reading it per request
+    keeps generation in step with a checklist the learner edits at any time.
+    """
+    try:
+        store = KnownConceptsStore(request.app.state.database.connect())
+    except AttributeError:  # pragma: no cover - app always wires the database
+        return []
+    return store.get()
 
 
 @router.post("/generate")
@@ -58,6 +79,13 @@ def generate_problem(request: Request, body: GenerateRequest) -> dict:
             ),
         )
 
+    from app.schemas.problem import ProblemKind
+
+    try:
+        kind = ProblemKind(body.kind)
+    except ValueError as exc:  # pragma: no cover - the field pattern guards this
+        raise HTTPException(status_code=422, detail=f"unknown kind: {body.kind}") from exc
+
     generation_request = GenerationRequest(
         topic=body.topic,
         difficulty=body.difficulty,
@@ -65,6 +93,9 @@ def generate_problem(request: Request, body: GenerateRequest) -> dict:
         constraints=body.constraints,
         forbidden=body.forbidden,
         hints_enabled=body.hints_enabled,
+        kind=kind,
+        new_concept=body.new_concept,
+        assumed_known=body.assumed_known,
     )
 
     try:
@@ -73,6 +104,7 @@ def generate_problem(request: Request, body: GenerateRequest) -> dict:
             use_cache=body.use_cache,
             exercise_role=ExerciseRole(body.exercise_role),
             prerequisites=body.prerequisites,
+            known_concepts=_known_concepts(request),
         )
     except AuthError as exc:
         raise HTTPException(status_code=502, detail=f"AI authentication failed: {exc}") from exc

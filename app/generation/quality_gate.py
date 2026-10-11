@@ -12,6 +12,7 @@ all required checks pass.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -21,6 +22,7 @@ from app.generation.mutation import MutationTester, mutation_finding
 from app.schemas.grading import ResultCategory
 from app.schemas.problem import Problem, ProblemKind, ProblemStatus
 from app.schemas.test_case import Visibility
+from app.services.concepts import ConceptLegalityChecker, is_problem_set
 from app.services.distribution import DistributionChecker
 
 #: Bounds beyond which resource limits are considered unreasonable.
@@ -69,6 +71,8 @@ class QualityReport:
     calibration: dict | None = None
     #: Distribution-code result, for problem sets.
     distribution: dict | None = None
+    #: Concept-legality result, for problem sets with a concept pair.
+    concepts: dict | None = None
 
     @property
     def errors(self) -> list[Finding]:
@@ -93,6 +97,7 @@ class QualityReport:
             "mutation": self.mutation,
             "calibration": self.calibration,
             "distribution": self.distribution,
+            "concepts": self.concepts,
             "findings": [f.to_dict() for f in self.findings],
         }
 
@@ -113,6 +118,7 @@ class QualityGate:
         *,
         mutation_enabled: bool = True,
         calibration_enabled: bool = False,
+        known_concepts: list[str] | None = None,
     ) -> None:
         self.evaluator = evaluator or Evaluator()
         self.mutation_tester = MutationTester(self.evaluator, enabled=mutation_enabled)
@@ -120,6 +126,22 @@ class QualityGate:
         # The checker derives its grading config from each problem (exactly as
         # the reference check does), so no evaluator is injected here.
         self.distribution_checker = DistributionChecker()
+        # The learner's known-concepts checklist drives concept legality (spec
+        # S3). It is threaded in here rather than read from storage so the gate
+        # stays pure and testable. The default is deliberately empty: see
+        # ``_check_concepts`` for what that means for a problem set.
+        self.known_concepts: list[str] = list(known_concepts or [])
+
+    def with_checklist(self, known_concepts: list[str]) -> "QualityGate":
+        """Return a copy of this gate that checks against ``known_concepts``.
+
+        The behaviour settings (mutation, calibration, evaluator) are shared by
+        reference - they are stateless - so only the checklist differs. This
+        lets a per-request checklist be applied without mutating shared state.
+        """
+        clone = copy.copy(self)
+        clone.known_concepts = list(known_concepts or [])
+        return clone
 
     def check(self, problem: Problem) -> QualityReport:
         """Run every structural and behavioural check."""
@@ -130,6 +152,7 @@ class QualityGate:
         self._check_resource_limits(problem, report)
         self._check_reference(problem, report)
         self._check_distribution(problem, report)
+        self._check_concepts(problem, report)
 
         # Only worth mutating once the reference is known to compile and pass;
         # otherwise every mutant would fail for the same underlying reason.
@@ -419,6 +442,47 @@ class QualityGate:
 
         result = self.distribution_checker.check(problem)
         report.distribution = result.to_dict()
+
+        for finding in result.findings:
+            report.findings.append(
+                Finding(
+                    finding.concern.value,
+                    finding.message,
+                    Severity.ERROR if finding.fatal else Severity.WARNING,
+                )
+            )
+
+    # -- concept legality ---------------------------------------------------
+
+    def _check_concepts(self, problem: Problem, report: QualityReport) -> None:
+        """Check the concept-legality rule for problem sets (spec S3).
+
+        Only packages that declare themselves problem sets *and* carry a
+        ``concept`` pair are inspected; every legacy exercise and every pset
+        without a concept block is untouched (:func:`is_problem_set`).
+
+        What the default *empty* checklist means
+        ----------------------------------------
+        The checklist is the learner's explicit "known" side and the gate does
+        not guess it. An empty checklist therefore means "the learner knows
+        nothing on the ladder". A concept block is then still legal in exactly
+        one case: when the reference needs nothing but the single declared
+        ``new_concept`` (so ``required ⊆ {new_concept}``). Any pset whose
+        reference also leans on a *known* concept is rejected, because that
+        concept cannot be assumed known.
+
+        This is the conservative choice, and it is deliberate: silently
+        assuming a concept is known would let an above-the-learner pset ship
+        with a warning, which the spec forbids ("never shipped with a warning").
+        Callers that know the learner's checklist supply it (the generation API
+        reads the stored preferences) so a legitimate known+new combination is
+        accepted.
+        """
+        if not is_problem_set(problem):
+            return
+
+        result = ConceptLegalityChecker().check(problem, self.known_concepts)
+        report.concepts = result.to_dict()
 
         for finding in result.findings:
             report.findings.append(
