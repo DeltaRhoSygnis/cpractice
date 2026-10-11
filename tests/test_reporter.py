@@ -17,7 +17,14 @@ from app.schemas.grading import (
     ResultCategory,
     TestResult,
 )
+from app.schemas.problem import (
+    CheckerPlan,
+    Problem,
+    ProblemMetadata,
+)
+from app.schemas.problem import ProblemKind
 from app.schemas.test_case import ComparisonMode, TestCase, Visibility
+from app.services.checker import build_checker
 
 SUM_PROGRAM = """\
 #include <stdio.h>
@@ -192,6 +199,88 @@ def test_failure_summary_knows_hidden_visibility() -> None:
 
 
 # --- category descriptions -------------------------------------------------
+
+
+# --- checker payload (spec S5) --------------------------------------------
+
+
+def _checker_problem() -> Problem:
+    return Problem(
+        metadata=ProblemMetadata(
+            id="p",
+            title="Probe",
+            kind=ProblemKind.PROBLEM_SET,
+            entrypoint="main.c",
+        ),
+        statement_md="# Task",
+        tests=_tests(),
+    )
+
+
+def test_no_checker_key_when_problem_has_none() -> None:
+    """Legacy exercises keep the exact payload they always had."""
+    payload = ResultReporter().build(_report(), problem_id="p")
+
+    assert "checks" not in payload
+
+
+def test_checks_array_is_added_when_a_checker_is_supplied() -> None:
+    problem = _checker_problem()
+    payload = ResultReporter().build(
+        _report(), problem_id="p", checker=build_checker(problem)
+    )
+
+    assert "checks" in payload
+    assert [c["name"] for c in payload["checks"]][:2] == ["exists", "compiles"]
+
+
+def test_checker_addition_preserves_every_existing_field() -> None:
+    problem = _checker_problem()
+    # Reuse one report so timing fields cannot differ between the two builds.
+    report = _report()
+    without = ResultReporter().build(report, problem_id="p")
+    with_checker = ResultReporter().build(
+        report, problem_id="p", checker=build_checker(problem)
+    )
+
+    for key, value in without.items():
+        assert with_checker[key] == value, f"{key} must be unchanged"
+    # The addition is purely additive.
+    assert set(with_checker) == set(without) | {"checks"}
+
+
+def test_hidden_check_in_payload_carries_no_stdin_or_expected_stdout() -> None:
+    problem = _checker_problem()
+    payload = ResultReporter().build(
+        _report(), problem_id="p", checker=build_checker(problem)
+    )
+    rendered = str(payload)
+
+    hidden = next(c for c in payload["checks"] if c["name"] == "sec")
+    # Name only; the secret expected value and hidden stdin never appear.
+    assert hidden["description"] == "Hidden boundary"
+    assert hidden["data"] == {}
+    assert SECRET not in rendered
+    assert "999 111" not in rendered
+
+
+def test_checker_uses_the_same_outcome_as_the_report() -> None:
+    problem = _checker_problem()
+    source = (
+        '#include <stdio.h>\n'
+        'int main(void){int a,b;if(scanf("%d %d",&a,&b)!=2)return 1;'
+        'printf("%d\\n",a+b);return 0;}\n'
+    )
+    report = Evaluator().grade_source(source, _tests(), problem_id="p")
+
+    payload = ResultReporter().build(
+        report, problem_id="p", checker=build_checker(problem)
+    )
+    by_id = {c["name"]: c for c in payload["checks"]}
+
+    assert by_id["compiles"]["passed"] is True
+    assert by_id["pub"]["passed"] is True
+    assert by_id["sec"]["passed"] is True
 
 
 def test_all_actionable_categories_have_descriptions() -> None:
