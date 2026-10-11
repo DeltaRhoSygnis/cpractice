@@ -14,6 +14,7 @@ from app.feedback.hint_service import HintService
 from app.main import create_app
 
 EXAMPLE_ID = "c-sum-two-integers"
+PSET_ID = "pset-vote-tally"
 REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "problems"
 
 REFERENCE = """\
@@ -137,6 +138,102 @@ def test_oversized_submission_is_rejected(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert "limit" in response.json()["detail"]
+
+
+# --- checker in the submission response (spec S5) --------------------------
+
+
+def test_legacy_exercise_submission_has_no_checks_key(tmp_path: Path) -> None:
+    """An exercise without a checker keeps the exact payload it always had."""
+    with _client(tmp_path) as client:
+        body = client.post(
+            f"/api/problems/{EXAMPLE_ID}/submit", json={"source": STARTER}
+        ).json()
+
+    assert "checks" not in body
+
+
+def test_problem_set_submission_includes_ordered_checks(tmp_path: Path) -> None:
+    problem_json = json.loads((REPO_PROBLEMS / PSET_ID / "problem.json").read_text())
+    test_ids = [t["id"] for t in problem_json["tests"]]
+
+    with _client(tmp_path) as client:
+        response = client.post(
+            f"/api/problems/{PSET_ID}/submit",
+            json={"source": "int main(void){return 0;}"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "checks" in body
+
+    names = [c["name"] for c in body["checks"]]
+    assert names[:2] == ["exists", "compiles"]
+    assert names[2:] == test_ids
+
+
+def test_problem_set_checks_have_the_report_shape(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        body = client.post(
+            f"/api/problems/{PSET_ID}/submit",
+            json={"source": "int main(void){return 0;}"},
+        ).json()
+
+    for check in body["checks"]:
+        assert set(check) >= {
+            "name",
+            "description",
+            "passed",
+            "blocked",
+            "cause",
+            "data",
+            "visibility",
+        }
+        # A check never carries per-test data that could leak hidden inputs.
+        assert check["data"] == {}
+
+
+def test_compilation_failure_blocks_behavioural_checks_in_response(
+    tmp_path: Path,
+) -> None:
+    with _client(tmp_path) as client:
+        body = client.post(
+            f"/api/problems/{PSET_ID}/submit",
+            json={"source": 'int main(void){ printf("x" return 0; }'},
+        ).json()
+
+    by_name = {c["name"]: c for c in body["checks"]}
+    assert by_name["compiles"]["passed"] is False
+    # Behavioural checks are blocked, not failed.
+    behavioural = [c for c in body["checks"] if c["name"] not in ("exists", "compiles")]
+    assert behavioural, "the pset must have behavioural checks"
+    assert all(c["blocked"] for c in behavioural)
+    assert all(c["cause"] == "compilation failed" for c in behavioural)
+
+
+def test_hidden_checks_expose_name_only_in_response(tmp_path: Path) -> None:
+    problem_json = json.loads((REPO_PROBLEMS / PSET_ID / "problem.json").read_text())
+    hidden = [t for t in problem_json["tests"] if t["visibility"] == "hidden"]
+    assert hidden, "fixture must contain hidden tests"
+
+    with _client(tmp_path) as client:
+        body = client.post(
+            f"/api/problems/{PSET_ID}/submit",
+            json={"source": "int main(void){return 0;}"},
+        ).json()
+
+    hidden_ids = {t["id"] for t in hidden}
+    raw = json.dumps(body)
+    for check in body["checks"]:
+        if check["name"] in hidden_ids:
+            assert check["visibility"] == "hidden"
+            assert check["data"] == {}
+    # No hidden stdin or expected output may appear anywhere in the payload.
+    for test in hidden:
+        assert test["expected_stdout"].strip() not in raw
+        stdin = test["stdin"].strip()
+        if len(stdin) >= 3:
+            assert stdin not in raw
 
 
 def test_submitting_to_unknown_problem_returns_404(tmp_path: Path) -> None:

@@ -334,6 +334,27 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   overflow-wrap: anywhere; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
 .test-row__hidden { color: var(--text-dim); font-style: italic; }
 
+/* --- checker (ordered, named, dependency-aware) ---
+   Mirrors .test-row's language: an icon column, a mono body, and a coloured
+   left border. Pass/fail/blocked is never colour-only — the row also carries a
+   glyph and a visually-hidden status word. */
+.check-list { list-style: none; margin: 0 0 var(--sp-3); padding: 0; display: grid; gap: var(--sp-1); }
+.check-row {
+  display: flex; gap: var(--sp-2); align-items: flex-start; font-size: .85rem;
+  padding: .45rem .55rem; border-radius: var(--r-1); background: var(--code-bg);
+  border-left: 3px solid var(--border); font-family: var(--mono);
+}
+.check-row--pass { border-left-color: var(--ok); }
+.check-row--fail { border-left-color: var(--fail); }
+.check-row--blocked { border-left-color: var(--warn); }
+.check-row__icon { flex: 0 0 1.2em; font-weight: 700; text-align: center; line-height: 1; }
+.check-row--pass .check-row__icon { color: var(--ok); }
+.check-row--fail .check-row__icon { color: var(--fail); }
+.check-row--blocked .check-row__icon { color: var(--warn); }
+.check-row__body { min-width: 0; }
+.check-row__name { font-weight: 600; overflow-wrap: anywhere; }
+.check-row__detail { color: var(--text-dim); font-size: .78rem; overflow-wrap: anywhere; }
+
 /* --- result banner --- */
 .verdict {
   display: flex; align-items: center; gap: var(--sp-2); padding: .7rem .85rem;
@@ -451,9 +472,13 @@ pre.diagnostics::-webkit-scrollbar-track { background: transparent; }
    gain a shape or a system-colour channel. */
 @media (forced-colors: active) {
   .app-header { border-bottom: 1px solid CanvasText; }
-  .test-row--pass, .test-row--fail, .verdict--pass, .verdict--fail { border: 1px solid CanvasText; border-left-width: 3px; }
+  .test-row--pass, .test-row--fail, .verdict--pass, .verdict--fail,
+  .check-row--pass, .check-row--fail, .check-row--blocked { border: 1px solid CanvasText; border-left-width: 3px; }
   .test-row--pass { border-left-style: solid; }
   .test-row--fail { border-left-style: double; }
+  .check-row--pass { border-left-style: solid; }
+  .check-row--fail { border-left-style: double; }
+  .check-row--blocked { border-left-style: dashed; }
   .hint-step--used { background: Highlight; color: HighlightText; border-color: Highlight; }
   .hint-step--next { border: 2px solid CanvasText; }
   .skip-link:focus { background: Highlight; color: HighlightText; }

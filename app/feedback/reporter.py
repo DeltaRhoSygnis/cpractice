@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.schemas.grading import GradingReport, ResultCategory, TestResult
+from app.schemas.problem import CheckerPlan, Problem
 from app.schemas.test_case import TestCase, Visibility
 
 #: Result categories a learner can act on.
@@ -54,11 +55,29 @@ class ResultReporter:
 
     # -- client payload ----------------------------------------------------
 
-    def build(self, report: GradingReport, problem_id: str) -> dict:
-        """Return the JSON payload describing an attempt."""
+    def build(
+        self,
+        report: GradingReport,
+        problem_id: str,
+        checker: CheckerPlan | None = None,
+        problem: Problem | None = None,
+        predicted_stdout: str | None = None,
+    ) -> dict:
+        """Return the JSON payload describing an attempt.
+
+        ``checker`` is additive and optional (spec S5): when a problem carries a
+        checker plan, the payload gains an ordered ``checks`` array mirroring
+        ``check50``'s report. Every pre-existing field is unchanged, and a
+        problem without a checker produces exactly the payload it always did.
+
+        ``predicted_stdout`` is additive and optional (spec S6): when the learner
+        made a prediction, the payload gains a ``prediction`` object comparing
+        predicted vs expected vs actual. It never affects the verdict, pass
+        counts, or any graded field.
+        """
         failures = self.failures(report)
 
-        return {
+        payload = {
             "problem_id": problem_id,
             "compilation": {
                 "success": report.compilation.success,
@@ -84,6 +103,35 @@ class ResultReporter:
             ],
             "verdict": self.verdict(report),
         }
+
+        if checker is not None:
+            # Imported lazily: the checker is a status view over the report, and
+            # this keeps reporter importable even if only the verdict path is
+            # used. Only names/descriptions/status travel; a behavioural check's
+            # stdin and expected stdout are never part of this payload, and a
+            # hidden check is marked hidden without any per-test data.
+            from app.services.checker import evaluate_checks
+
+            payload["checks"] = evaluate_checks(checker, report)
+
+        if problem is not None and predicted_stdout:
+            # The predict-then-verify diff (spec S6). It reuses the deterministic
+            # comparator and cites only *declared* misconception ids; it cannot
+            # change a grade. Absent when no prediction was given.
+            from app.feedback.prediction import (
+                build_prediction_diff,
+                prediction_to_payload,
+            )
+
+            payload["prediction"] = prediction_to_payload(
+                build_prediction_diff(
+                    problem=problem,
+                    predicted_stdout=predicted_stdout,
+                    report=report,
+                )
+            )
+
+        return payload
 
     def _test_payload(self, test: TestResult) -> dict:
         payload = {
