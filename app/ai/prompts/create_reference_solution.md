@@ -23,6 +23,21 @@ line-by-line narration.
 `solution_outline` (author-only): the reasoning steps, used to validate the
 exercise and to author hints. This is not shown to the learner by default.
 
+## Also produce: distribution code (`starter_code`)
+
+The starter is what the learner opens the editor to. It is a first-class
+artefact with hard requirements:
+
+* It **must compile** cleanly as C11, so the learner can run the checker
+  immediately.
+* It **must not pass** the tests on its own: it is missing at least one real
+  piece of logic, so completing it is the task. A starter that solves the pset
+  is rejected.
+* It **must contain at least one `TODO` comment** marking exactly what the
+  learner must implement. Mark missing decisions, not formatting.
+* It **must not be** the reference solution. Never ship the answer as the
+  starter.
+
 ## Before returning
 
 Trace your implementation against each planned test by hand. Confirm the

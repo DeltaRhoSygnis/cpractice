@@ -19,8 +19,9 @@ from app.grading.evaluator import Evaluator, GradingConfig
 from app.generation.calibration import CalibrationChecker
 from app.generation.mutation import MutationTester, mutation_finding
 from app.schemas.grading import ResultCategory
-from app.schemas.problem import Problem, ProblemStatus
+from app.schemas.problem import Problem, ProblemKind, ProblemStatus
 from app.schemas.test_case import Visibility
+from app.services.distribution import DistributionChecker
 
 #: Bounds beyond which resource limits are considered unreasonable.
 _MIN_TIME_LIMIT_MS = 100
@@ -66,6 +67,8 @@ class QualityReport:
     mutation: dict | None = None
     #: Calibration result, when it ran.
     calibration: dict | None = None
+    #: Distribution-code result, for problem sets.
+    distribution: dict | None = None
 
     @property
     def errors(self) -> list[Finding]:
@@ -89,6 +92,7 @@ class QualityReport:
             "reference_total": self.reference_total,
             "mutation": self.mutation,
             "calibration": self.calibration,
+            "distribution": self.distribution,
             "findings": [f.to_dict() for f in self.findings],
         }
 
@@ -113,6 +117,9 @@ class QualityGate:
         self.evaluator = evaluator or Evaluator()
         self.mutation_tester = MutationTester(self.evaluator, enabled=mutation_enabled)
         self.calibration_enabled = calibration_enabled
+        # The checker derives its grading config from each problem (exactly as
+        # the reference check does), so no evaluator is injected here.
+        self.distribution_checker = DistributionChecker()
 
     def check(self, problem: Problem) -> QualityReport:
         """Run every structural and behavioural check."""
@@ -122,6 +129,7 @@ class QualityGate:
         self._check_pedagogy(problem, report)
         self._check_resource_limits(problem, report)
         self._check_reference(problem, report)
+        self._check_distribution(problem, report)
 
         # Only worth mutating once the reference is known to compile and pass;
         # otherwise every mutant would fail for the same underlying reason.
@@ -395,6 +403,29 @@ class QualityGate:
                     "reference-times-out",
                     "reference solution exceeds the declared time limit",
                     Severity.ERROR,
+                )
+            )
+
+    # -- distribution code --------------------------------------------------
+
+    def _check_distribution(self, problem: Problem, report: QualityReport) -> None:
+        """Check the distribution-code contract for problem sets (spec S4).
+
+        Legacy exercises are exempt: the distribution rules never apply to a
+        package that does not declare ``kind == problem_set``.
+        """
+        if problem.metadata.kind is not ProblemKind.PROBLEM_SET:
+            return
+
+        result = self.distribution_checker.check(problem)
+        report.distribution = result.to_dict()
+
+        for finding in result.findings:
+            report.findings.append(
+                Finding(
+                    finding.concern.value,
+                    finding.message,
+                    Severity.ERROR if finding.fatal else Severity.WARNING,
                 )
             )
 

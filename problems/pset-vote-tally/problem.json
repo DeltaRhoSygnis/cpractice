@@ -1,0 +1,224 @@
+{
+  "schema_version": "1.0",
+  "id": "pset-vote-tally",
+  "version": 1,
+  "title": "Vote Tally with Majority Check",
+  "language": "c",
+  "difficulty": "beginner",
+  "topics": [
+    "arrays",
+    "loops"
+  ],
+  "target_skills": [],
+  "compiler": {
+    "standard": "c11"
+  },
+  "entrypoint": "main.c",
+  "comparison": "exact_normalized",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 128,
+  "status": "validated",
+  "kind": "problem_set",
+  "concept": {
+    "new_concept": "arrays",
+    "assumed_known": [
+      "for_loops",
+      "input_output"
+    ]
+  },
+  "distribution": {
+    "has_starter": true,
+    "todo_count": 3,
+    "hint_code": ""
+  },
+  "statement_md": "A student council runs an election for class representative. Each ballot is a single integer naming a candidate. The ballots arrive as one line of space-separated integers: the first integer `n` is the number of ballots (1 <= n <= 100000), and the next `n` integers are the candidate numbers that were voted for. Candidate numbers are between 1 and 1000 inclusive.\n\nYour job is to tally the votes and report the outcome:\n\n- If one candidate received **strictly more than half** of all `n` ballots, print that candidate's number and the word `majority`, separated by a single space: for example `3 majority`.\n- Otherwise, print the candidate who received the **most** votes, followed by `plurality`. If two or more candidates tie for the most votes, print the **smallest** such candidate number (a tie is resolved deterministically so the output is always well defined).\n\nYou do not need to validate the input: it is guaranteed to contain exactly `n + 1` integers on one line, with `n` at least 1 and every ballot in range.\n\n### Input format\n\nOne line containing n+1 space-separated integers: n, followed by n ballots.\n\n### Output format\n\nOne line: the winning candidate number, a single space, then either `majority` or `plurality`, followed by a newline.\n\n### Examples\n\n- {'input': '5 1 2 2 2 1', 'output': '2 majority', 'explanation': 'Candidate 2 has 3 of 5 ballots, which is more than half.'}\n- {'input': '4 7 7 9 9', 'output': '7 plurality', 'explanation': '7 and 9 tie on 2 votes each; the tie is broken toward the smaller number.'}\n- {'input': '3 5 5 5', 'output': '5 majority', 'explanation': 'Candidate 5 has 3 of 3 ballots.'}",
+  "starter_code": "",
+  "reference_solution": "",
+  "tests": [
+    {
+      "id": "test-1",
+      "name": "public_majority",
+      "visibility": "public",
+      "stdin": "5 1 2 2 2 1",
+      "expected_stdout": "2 majority\n",
+      "expected_exit_code": 0,
+      "timeout_ms": null,
+      "comparison": null,
+      "requirement_ids": [
+        "REQ-COUNT-BALLOTS",
+        "REQ-MAJORITY"
+      ],
+      "misconception_ids": [
+        "MIS-NO-TALLY"
+      ],
+      "rationale": ""
+    },
+    {
+      "id": "test-2",
+      "name": "public_plurality_tie",
+      "visibility": "public",
+      "stdin": "4 7 7 9 9",
+      "expected_stdout": "7 plurality\n",
+      "expected_exit_code": 0,
+      "timeout_ms": null,
+      "comparison": null,
+      "requirement_ids": [
+        "REQ-COUNT-BALLOTS",
+        "REQ-PLURALITY",
+        "REQ-TIE-BREAK"
+      ],
+      "misconception_ids": [
+        "MIS-LAST-TIE",
+        "MIS-NO-TALLY"
+      ],
+      "rationale": ""
+    },
+    {
+      "id": "test-3",
+      "name": "public_unanimous",
+      "visibility": "public",
+      "stdin": "3 5 5 5",
+      "expected_stdout": "5 majority\n",
+      "expected_exit_code": 0,
+      "timeout_ms": null,
+      "comparison": null,
+      "requirement_ids": [
+        "REQ-COUNT-BALLOTS",
+        "REQ-MAJORITY"
+      ],
+      "misconception_ids": [
+        "MIS-BAD-MAJORITY"
+      ],
+      "rationale": ""
+    },
+    {
+      "id": "test-4",
+      "name": "hidden_exactly_half_not_majority",
+      "visibility": "hidden",
+      "stdin": "6 4 4 4 5 5 6",
+      "expected_stdout": "4 plurality\n",
+      "expected_exit_code": 0,
+      "timeout_ms": null,
+      "comparison": null,
+      "requirement_ids": [
+        "REQ-COUNT-BALLOTS",
+        "REQ-PLURALITY"
+      ],
+      "misconception_ids": [
+        "MIS-BAD-MAJORITY"
+      ],
+      "rationale": ""
+    },
+    {
+      "id": "test-5",
+      "name": "hidden_tie_smallest_wins",
+      "visibility": "hidden",
+      "stdin": "6 300 300 100 100 250 250",
+      "expected_stdout": "100 plurality\n",
+      "expected_exit_code": 0,
+      "timeout_ms": null,
+      "comparison": null,
+      "requirement_ids": [
+        "REQ-TIE-BREAK"
+      ],
+      "misconception_ids": [
+        "MIS-LAST-TIE"
+      ],
+      "rationale": ""
+    },
+    {
+      "id": "test-6",
+      "name": "hidden_just_over_half",
+      "visibility": "hidden",
+      "stdin": "5 9 9 9 1 2",
+      "expected_stdout": "9 majority\n",
+      "expected_exit_code": 0,
+      "timeout_ms": null,
+      "comparison": null,
+      "requirement_ids": [
+        "REQ-MAJORITY"
+      ],
+      "misconception_ids": [
+        "MIS-BAD-MAJORITY"
+      ],
+      "rationale": ""
+    },
+    {
+      "id": "test-7",
+      "name": "hidden_upper_candidate_boundary",
+      "visibility": "hidden",
+      "stdin": "3 1000 1000 1",
+      "expected_stdout": "1000 majority\n",
+      "expected_exit_code": 0,
+      "timeout_ms": null,
+      "comparison": null,
+      "requirement_ids": [
+        "REQ-COUNT-BALLOTS",
+        "REQ-MAJORITY"
+      ],
+      "misconception_ids": [
+        "MIS-NO-TALLY"
+      ],
+      "rationale": ""
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "text": "You need to count how many times each candidate appears before you can decide the winner. What data could hold one count per candidate?"
+    },
+    {
+      "level": 2,
+      "text": "A candidate has a majority only when their count is more than half of n. Remember that integer division truncates, so compare count * 2 against n rather than count against n / 2."
+    },
+    {
+      "level": 3,
+      "text": "Scan all possible candidate numbers in increasing order and keep the one with the highest count so far. Update only on a strictly greater count; that keeps the smallest candidate when there is a tie."
+    },
+    {
+      "level": 4,
+      "text": "First pass: for each ballot, increment a counter for that candidate. Second pass: iterate candidates from 1 upward, tracking best_count and best_candidate; replace only when counts[c] > best_count. Finally print the winner with 'majority' if best_count * 2 > n, else 'plurality'."
+    }
+  ],
+  "solution_explanation": "The count array makes the tally linear: one pass records each vote, and a second pass over the fixed candidate range finds the maximum count. Iterating candidates in increasing order and updating only on a strictly greater count makes the smallest candidate win any tie. The majority test uses best_count * 2 > n to avoid the truncation error of integer division.",
+  "pedagogy": {
+    "primary_objective": "Derive and implement a two-pass tally over an array that counts occurrences per key and selects the maximum, resolving ties deterministically.",
+    "secondary_objectives": [],
+    "prerequisites": [
+      "Using a for loop with a counter variable",
+      "Reading integers from stdin with scanf",
+      "Printing formatted output with printf",
+      "Basic comparison operators and if statements"
+    ],
+    "target_reasoning_moves": [
+      "REQ-COUNT-BALLOTS: accumulate one count per candidate in an indexed array during a single pass over the ballots",
+      "REQ-PLURALITY: select the candidate with the maximum count across all candidates",
+      "REQ-TIE-BREAK: iterate candidates in increasing order and update only on a strictly greater count so the smallest candidate wins a tie",
+      "REQ-MAJORITY: report a majority only when the winning count exceeds half of n"
+    ],
+    "likely_misconceptions": [
+      "MIS-NO-TALLY: printing a fixed answer instead of counting ballots",
+      "MIS-LAST-TIE: breaking a tie toward the last candidate seen instead of the smallest",
+      "MIS-BAD-MAJORITY: using n / 2 with a >= comparison, which wrongly reports a majority at exactly half"
+    ],
+    "exercise_role": "core_reasoning",
+    "difficulty_profile": {
+      "concept_novelty": 0,
+      "reasoning_steps": 0,
+      "algorithm_selection": 0,
+      "state_management": 0,
+      "edge_case_burden": 0,
+      "decomposition": 0,
+      "reading_complexity": 0,
+      "prerequisite_depth": 0
+    },
+    "transfer_goal": "Given a list of product identifiers, count how many times each appears and report the most frequent, applying the same accumulation-array and deterministic-tie reasoning to a different scenario.",
+    "acceptance_criteria": [
+      "The output distinguishes majority from plurality and always names exactly one candidate.",
+      "Ties for the most votes resolve to the smallest candidate number.",
+      "The reference uses a single counting array and no nested loops.",
+      "Every test's expected stdout matches the reference byte for byte."
+    ],
+    "solution_outline": ""
+  }
+}

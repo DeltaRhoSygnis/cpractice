@@ -19,7 +19,7 @@ from app.ai.cache import GenerationCache
 from app.ai.google import GoogleProvider
 from app.ai.kenari import KenariProvider
 from app.ai.rate_limits import RetryPolicy
-from app.api import generation, health, problems, progress, submissions
+from app.api import generation, health, preferences, problems, progress, submissions
 from app.config import Settings, get_settings
 from app.feedback.hint_service import HintService
 from app.generation.pipeline import GenerationPipeline
@@ -159,6 +159,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(generation.router, prefix="/api")
     app.include_router(submissions.router, prefix="/api")
     app.include_router(progress.router, prefix="/api")
+    app.include_router(preferences.router, prefix="/api")
 
     # --- Static frontend ---
     # Mounted last so it never shadows /api routes.
