@@ -72,6 +72,10 @@ class BlueprintRequest:
     exercise_role: ExerciseRole = ExerciseRole.CORE_REASONING
     prerequisites: list[str] = None  # type: ignore[assignment]
     forbid: list[str] = None  # type: ignore[assignment]
+    #: Whether the blueprint is for a problem set (spec S7). Problem sets
+    #: combine one new concept with the learner's known concepts.
+    is_problem_set: bool = False
+    new_concept: str = ""
 
     def __post_init__(self) -> None:
         # Frozen dataclass: normalise mutable defaults via object.__setattr__.
@@ -142,6 +146,13 @@ class BlueprintDesigner:
             f"- Exercise role: {request.exercise_role.value}",
         ]
 
+        if request.is_problem_set:
+            lines.append("- This is a PROBLEM SET, not a standalone exercise.")
+            if request.new_concept:
+                lines.append(
+                    f"- The one new concept to introduce: {request.new_concept}"
+                )
+
         if request.target_skills:
             lines.append(f"- Target skills: {', '.join(request.target_skills)}")
         if request.prerequisites:
@@ -159,6 +170,11 @@ class BlueprintDesigner:
             "blueprint, and the calibration checker will reject an exercise whose",
             "reference solution does not actually require the stated reasoning moves.",
         ]
+        if request.is_problem_set:
+            lines.append(
+                "As a problem set, frame the objective around a realistic scenario "
+                "that combines the new concept with the learner's known concepts."
+            )
         return "\n".join(lines)
 
     @staticmethod

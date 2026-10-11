@@ -41,6 +41,23 @@ A blueprint prevents the generator from producing a generic textbook exercise.
    `diagnostic_warmup`, `core_reasoning`, `transfer`, `challenge`,
    `debugging`, or `reflection`.
 
+## Problem sets
+
+When the request is for a **problem set**, design the blueprint around a
+realistic scenario, not an abstract task:
+
+9. `primary_objective` must state the reasoning the *new* concept demands and
+   how it is combined with concepts the learner already knows. A problem set
+   connects known and unknown; it never drills the new concept in isolation.
+10. `prerequisites` are exactly the concepts the learner already knows. Require
+    nothing outside them plus the single new concept.
+11. `likely_misconceptions` must name the wrong approaches a learner is most
+    likely to take when *combining* the concepts (for example: "reads the whole
+    line before tracking the running state, so the first item is mishandled").
+    Keep the `MIS-...` ids.
+12. `transfer_goal` must name a materially different real-world task that uses
+    the same combination.
+
 ## Output
 
 Return JSON matching the blueprint schema. Include `acceptance_criteria`: the

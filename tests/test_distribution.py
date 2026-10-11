@@ -339,7 +339,12 @@ def test_fixture_reference_passes_and_starter_does_not(fixture_problem) -> None:
 
 @_REQUIRES_COMPILER
 def test_fixture_distribution_passes_through_gate(fixture_problem) -> None:
-    report = QualityGate().check(fixture_problem)
+    # The gate now also enforces concept legality (spec S3), so the fixture's
+    # known concepts must be declared as known for it to be a legal pset. The
+    # distribution rules under test remain unchanged.
+    report = QualityGate(known_concepts=["for_loops", "input_output"]).check(
+        fixture_problem
+    )
 
     assert report.valid is True
     assert report.distribution is not None

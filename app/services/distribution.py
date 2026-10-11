@@ -78,6 +78,16 @@ class DistributionResult:
 _TODO_PATTERN = re.compile(r"\btodo\b", re.IGNORECASE)
 
 
+def count_todos(starter_code: str) -> int:
+    """Number of ``TODO`` markers in distribution code.
+
+    Exposed so the pipeline records ``distribution.todo_count`` with the *same*
+    definition the checker uses for its "missing TODO" rule: two copies of the
+    pattern would be free to drift, and the count is surfaced to the learner.
+    """
+    return len(_TODO_PATTERN.findall(starter_code))
+
+
 class DistributionChecker:
     """Checks the distribution-code contract against a problem set.
 
@@ -201,3 +211,12 @@ class DistributionChecker:
                     fatal=True,
                 )
             )
+
+
+__all__ = [
+    "DistributionChecker",
+    "DistributionConcern",
+    "DistributionFinding",
+    "DistributionResult",
+    "count_todos",
+]
