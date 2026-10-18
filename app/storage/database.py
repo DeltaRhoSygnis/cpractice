@@ -94,6 +94,20 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS batch_provenance (
+    problem_id     TEXT PRIMARY KEY,
+    job_id         TEXT NOT NULL,
+    provider       TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    outcome        TEXT NOT NULL,
+    from_cache     INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_batch_provenance_job ON batch_provenance(job_id);
 """
 
 

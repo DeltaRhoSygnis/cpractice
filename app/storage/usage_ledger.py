@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from app.ai.base import AIProviderError, GenerationResponse, UsageRecord
+from app.ai.base import AIProviderError, BatchItemResult, GenerationResponse, UsageRecord
 from app.storage.database import Database
 
 
@@ -224,3 +224,127 @@ class LedgeredProvider:
 
         self._ledger.record_success(response.usage, operation=operation)
         return response
+
+
+# --- batch provenance -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BatchProvenance:
+    """Metadata recording how one stored pset was prepared (spec S7).
+
+    Metadata **only**: provider, model, prompt version, job id and the item's
+    outcome. Never a prompt, never a response body. The spec requires each
+    batch-prepared pset to be traceable to its job without turning the database
+    into a content store.
+    """
+
+    problem_id: str
+    job_id: str
+    provider: str
+    model: str
+    prompt_version: str
+    outcome: str  #: "validated" | "rejected" | "provider_failed" | "cached"
+    from_cache: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "problem_id": self.problem_id,
+            "job_id": self.job_id,
+            "provider": self.provider,
+            "model": self.model,
+            "prompt_version": self.prompt_version,
+            "outcome": self.outcome,
+            "from_cache": self.from_cache,
+        }
+
+
+class BatchProvenanceStore:
+    """Reads and writes per-pset batch provenance records.
+
+    A pset is recorded once per job; a re-run updating the same pset keeps a
+    single row (upsert keyed on ``problem_id``), because the question it
+    answers is "how was this pset prepared?", not "how many times did a job run
+    attempt it?" (the ledger already records every attempt).
+    """
+
+    def __init__(self, database: Database) -> None:
+        self.database = database
+
+    def record(self, provenance: BatchProvenance) -> None:
+        with self.database.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO batch_provenance
+                    (problem_id, job_id, provider, model, prompt_version,
+                     outcome, from_cache)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(problem_id) DO UPDATE SET
+                    job_id = excluded.job_id,
+                    provider = excluded.provider,
+                    model = excluded.model,
+                    prompt_version = excluded.prompt_version,
+                    outcome = excluded.outcome,
+                    from_cache = excluded.from_cache,
+                    updated_at = datetime('now')
+                """,
+                (
+                    provenance.problem_id,
+                    provenance.job_id,
+                    provenance.provider,
+                    provenance.model,
+                    provenance.prompt_version,
+                    provenance.outcome,
+                    1 if provenance.from_cache else 0,
+                ),
+            )
+
+    def get(self, problem_id: str) -> BatchProvenance | None:
+        row = (
+            self.database.connect()
+            .execute(
+                "SELECT problem_id, job_id, provider, model, prompt_version, "
+                "outcome, from_cache FROM batch_provenance WHERE problem_id = ?",
+                (problem_id,),
+            )
+            .fetchone()
+        )
+        return _row_to_provenance(row) if row is not None else None
+
+    def for_job(self, job_id: str) -> list[BatchProvenance]:
+        rows = (
+            self.database.connect()
+            .execute(
+                "SELECT problem_id, job_id, provider, model, prompt_version, "
+                "outcome, from_cache FROM batch_provenance WHERE job_id = ? "
+                "ORDER BY problem_id",
+                (job_id,),
+            )
+            .fetchall()
+        )
+        return [_row_to_provenance(row) for row in rows]
+
+    def recent(self, *, limit: int = 50) -> list[BatchProvenance]:
+        rows = (
+            self.database.connect()
+            .execute(
+                "SELECT problem_id, job_id, provider, model, prompt_version, "
+                "outcome, from_cache FROM batch_provenance "
+                "ORDER BY updated_at DESC, problem_id LIMIT ?",
+                (max(1, min(limit, 200)),),
+            )
+            .fetchall()
+        )
+        return [_row_to_provenance(row) for row in rows]
+
+
+def _row_to_provenance(row: Any) -> BatchProvenance:
+    return BatchProvenance(
+        problem_id=row["problem_id"],
+        job_id=row["job_id"],
+        provider=row["provider"],
+        model=row["model"],
+        prompt_version=row["prompt_version"],
+        outcome=row["outcome"],
+        from_cache=bool(row["from_cache"]),
+    )
