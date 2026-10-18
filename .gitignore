@@ -46,3 +46,6 @@ Thumbs.db
 
 # --- OpenCode local ---
 .opencode/local/
+
+# --- Private agent toolkit (kept local, stop shipping to the public repo) ---
+.opencode/
