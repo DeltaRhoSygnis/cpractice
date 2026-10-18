@@ -63,8 +63,26 @@ master`.
    from §2.
 4. CI must be green on both matrix entries (py3.12 pinned stack py3.14
    floats). The MCP SDK is optional by design; CI never requires it.
-5. Merge, then flip `gh repo edit --visibility public` (only after the
-   `.opencode/` decision), then complete §4.
+5. Merge, then flip repository visibility to public, then complete §4.
+
+### Publication log (2026-10-18)
+
+- Visibility flip: **done by the owner** during this session.
+- Pushed `feat/pset-engine` (via SSH; the HTTPS token lacks `workflow`
+  scope) → **PR #1** open: base `master` ← `feat/pset-engine`.
+- GitGuardian security check: **pass**.
+- GitHub Actions: **blocked by an account billing lock** — both matrix jobs
+  report "The job was not started because your account is locked due to a
+  billing issue." Not a code failure; the identical tree is pytest-green
+  locally. Resume recipe once billing is fixed:
+  `gh run rerun <failed-run-id> --repo DeltaRhoSygnis/cpractice --failed`
+  or simply `gh pr checks 1 --watch`. Then merge, tag `v0.1.0`, create the
+  release with the wheel (§4).
+- Publication commit whitelist is on this branch: engine WIP committed
+  (`aa8ab2d`), docs (`54c2435`), `.opencode/` untracked (`3a6be91`).
+- Temporary SSH deploy key `cpractice-termux-publish-onetime` (id
+  166827052) added for this flow — **revoke it after the release**:
+  `gh api -X DELETE /user/keys/166827052`.
 
 ## 3. Pre-publish verification (run again on the branch that will be merged)
 
