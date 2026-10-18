@@ -65,6 +65,26 @@ or without the helper: `uvicorn app.main:app --host 127.0.0.1 --port 8000`.
 > **Termux caveat:** compiled binaries cannot execute on shared Android
 > storage (`noexec` mount). Keep the repo under the Termux home directory.
 
+### Use it from your laptop over the phone's hotspot
+
+The server can be shared with devices you own on the phone's hotspot
+(no auth — see SECURITY.md "LAN sharing" for the rules):
+
+```bash
+CPRACTICE_HOST=0.0.0.0 ./start.sh
+```
+
+`start.sh` then prints every usable LAN address; open `http://<phone-ip>:8000`
+from the laptop. Bluetooth tethering works identically once the PAN interface
+appears in `ip -4 -o addr show`. From the laptop you can even run the agent
+stack *there* while the grader stays on the phone:
+
+```bash
+pip install "mcp==1.30.0"
+CPRACTICE_URL=http://<phone-ip>:8000 python -m app.mcp.server
+# point opencode/Claude Desktop/Cline at this localhost MCP entry point
+```
+
 ### GitHub Codespaces
 
 The repo ships a `.devcontainer`, so C compilation works there too. Preflight

@@ -37,6 +37,25 @@ purpose:
    API; everyone in the MCP trust chain can run arbitrary C locally. Do not
    plug untrusted agents into it.
 
+### LAN sharing (phone hotspot / tethering) — reviewed shape
+
+Reaching CPractice from **your own laptop** over the phone's hotspot is a
+supported, reviewed configuration (`CPRACTICE_HOST=0.0.0.0 ./start.sh`,
+documented in the README). What "reviewed" means here, concretely:
+
+* The endpoint has **no authentication** — acceptance is: everyone who can
+  join your hotspot is another local user who can run arbitrary C on your
+  phone. Phones' hotspots usually allow this circle to be as small as you
+  want (you control the pairing/clients); keep it to devices you own.
+* **Do not** turn the hotspot on in a public place with the server bound to
+  `0.0.0.0` and then invite others; the invite *is* remote-code-execution.
+* Cellular interfaces are skipped in the `start.sh` LAN hint by design;
+  binding to door number "your mobile data IP" exposes the service beyond
+  the hotspot and is not covered by any review done for this repo.
+* Same rules apply to the MCP server if you similarly expose
+  `streamable-http`: it simply proxies submissions — the C still executes on
+  the phone.
+
 ## Public / hosted deployment
 
 The plans are explicit: **public deployment is blocked until the runner has a
