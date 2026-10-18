@@ -34,48 +34,39 @@ git log --all -p \
 
 ## 2. The `.opencode/` decision — **the one open call**
 
-`.opencode/` is ~13 MB / 1,325 **tracked** files: the vendored agent toolkit
-(prompts, skills, rules — including `brand-discovery` and its personal
-references). It is your development harness, **not the product**.
+This repo **already lives on GitHub**: `DeltaRhoSygnis/cpractice`, **private**,
+default branch `master` (1,325 `.opencode/` files already tracked; audit of
+that same history in §1 is clean of real secrets). "Publishing" therefore
+means **flipping visibility to public**, not creating a new repo — and the
+history that exists today becomes public exactly as it is.
+
+`.opencode/` (~13 MB) is the vendored agent toolkit including personal-ish
+skill prose (e.g. `brand-discovery`). It is development harness, not product.
 
 | Option | Effect | Note |
 |---|---|---|
-| **A. Ship it** | cost: 13 MB noise in a public repo, personal material exposed | not recommended |
-| **B. Untrack going forward** | `git rm -r --cached .opencode && echo ".opencode/" >> .gitignore` | files remain in *history* until the history is squashed |
-| **C. Publish from a squashed clean history (recommended)** | public `main` starts at a single commit containing product + docs + tests; keep this working branch private as backup | nothing personal, no toolkit, simplest forensic story |
+| **A. Ship history as-is** | zero further work; phase out `.opencode/` in a later commit | simplest; 13 MB stays in clone cost |
+| **B. Untrack going forward, keep history** | `git rm -r --cached .opencode && echo ".opencode/" >> .gitignore && git commit` | clones still download the old blobs, but the working tree is clean |
+| **C. Rewrite history before the flip (safest story)** | new clean `master` (squash), force-push, then flip private→public | only safe **while the repo is private** (no outside clones exist) — exactly the situation now |
 
-Recommended flow (option C):
+If C is chosen, prefer `git commit-tree`/`filter-repo` against a fresh branch
+and verify the audit of the *new* history; then `git push --force origin
+master`.
 
-```bash
-# 1) opinions-free copy of what should be public
-git checkout feat/pset-engine
-git rm -r --cached .opencode            # toolkit stays on disk, leaves the index
-echo ".opencode/" >> .gitignore
-git commit -m "chore: stop tracking the private agent toolkit"
+## 3. Publication flow on the existing repo
 
-# 2) publish tree only
-work=$(mktemp -d)
-git archive HEAD | tar -x -C "$work"
-cd "$work"
-# review: git status is trivially clean; ls -la shows no .opencode, no notes.txt
-```
+1. Push the feature branch and open the PR:
+   `git push -u origin feat/pset-engine` → PR `feat/pset-engine` → `master`
+2. Resolve the uncommitted engine WIP first (commit, or deliberately keep out
+   — but know that CI tests the pushed tree only).
+3. In the PR, decide `master`'s 2 unpushed commits and the `.opencode/` call
+   from §2.
+4. CI must be green on both matrix entries (py3.12 pinned stack py3.14
+   floats). The MCP SDK is optional by design; CI never requires it.
+5. Merge, then flip `gh repo edit --visibility public` (only after the
+   `.opencode/` decision), then complete §4.
 
-`git archive` never carries ignored/untracked files (`notes.txt`,
-`_archive/`, `.env`, `data/`, `workspaces/`, `problems/` generated content are
-excluded by the same rule), and never carries history — the squashed history
-is created by pushing this tree as a fresh initial commit:
-
-```bash
-cd "$work" && git init -b main && git add -A
-git commit -m "CPractice 0.1.0: AI-assisted C practice with deterministic grading"
-git remote add origin git@github.com:<you>/cpractice.git
-git push -u origin main
-```
-
-Development continues on your private repo; public repo is an export point per
-release (re-run the checklist each time).
-
-## 3. Pre-publish verification (run again on the export tree)
+## 3. Pre-publish verification (run again on the branch that will be merged)
 
 ```bash
 python -m pip install -r requirements.txt   # core stack
