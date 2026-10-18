@@ -45,8 +45,10 @@ mcp = ["mcp==1.30.0"]
 dev = ["pytest==8.3.4", "pytest-asyncio==0.25.0"]
 
 [project.urls]
-# Repository URL is set when the project goes public.
-# Documentation lives in README.md, SECURITY.md and docs/.
+Homepage = "https://github.com/DeltaRhoSygnis/cpractice"
+Repository = "https://github.com/DeltaRhoSygnis/cpractice"
+Issues = "https://github.com/DeltaRhoSygnis/cpractice/issues"
+Security = "https://github.com/DeltaRhoSygnis/cpractice/blob/master/SECURITY.md"
 
 [project.scripts]
 cpractice-mcp = "app.mcp.server:main"
