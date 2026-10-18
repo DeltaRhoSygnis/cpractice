@@ -10,17 +10,10 @@ HOST="${CPRACTICE_HOST:-127.0.0.1}"
 PORT="${CPRACTICE_PORT:-8000}"
 URL="http://${HOST}:${PORT}"
 
-if curl -s -m 2 -o /dev/null "${URL}/api/health" 2>/dev/null; then
-  echo "CPractice already running at ${URL}"
-  exit 0
-fi
-
-echo "Starting CPractice at ${URL} ..."
-
-# When bound to all interfaces, print every *useful* LAN address so a laptop
-# can reach the server over the phone's hotspot. Cellular interfaces (ccmni*)
-# are deliberately skipped: an RFC 1918 phone is not the front door there.
-if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
+# LAN hint for 0.0.0.0 binds: print every *useful* address so a laptop can
+# reach the server over the phone's hotspot. Cellular interfaces (ccmni*)
+# are deliberately skipped: a carrier-NAT address is not a front door.
+print_lan_hints() {
   if command -v ip >/dev/null 2>&1 \
      && ip -4 -o addr show scope global 2>/dev/null | grep -q inet; then
     echo "LAN address(es) for other devices:"
@@ -29,6 +22,7 @@ if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
   elif command -v ifconfig >/dev/null 2>&1; then
     # Linux without netlink access (e.g. unrooted Android/Termux): parse the
     # toybox/ifconfig "iface:"/"inet <addr> netmask ..." blocks instead.
+    local lan_addrs
     lan_addrs=$(ifconfig -a 2>/dev/null | awk -v port="$PORT" '
       /^[^ \t]/ { iface = $1; sub(/:$/, "", iface) }
       /^[ \t]*inet / {
@@ -40,6 +34,20 @@ if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
       echo "$lan_addrs" | sed "s|^|  http://|; s|$|:${PORT}|"
     fi
   fi
+}
+
+if curl -s -m 2 -o /dev/null "${URL}/api/health" 2>/dev/null; then
+  echo "CPractice already running at ${URL}"
+  if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
+    print_lan_hints
+  fi
+  exit 0
+fi
+
+echo "Starting CPractice at ${URL} ..."
+
+if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
+  print_lan_hints
 fi
 
 exec uvicorn app.main:app --host "${HOST}" --port "${PORT}" "$@"
