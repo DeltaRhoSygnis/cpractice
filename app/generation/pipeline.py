@@ -272,6 +272,34 @@ class GenerationPipeline:
 
     # -- public API --------------------------------------------------------
 
+    def cache_key_for(
+        self,
+        request: GenerationRequest,
+        *,
+        design_blueprint: bool = True,
+        exercise_role: ExerciseRole = ExerciseRole.CORE_REASONING,
+        prerequisites: list[str] | None = None,
+    ) -> str:
+        """The content-addressed cache key for a request (spec S7).
+
+        Exposed so a batch runner can consult the cache *before* submitting a
+        job: a pset already prepared must cost no provider call, which is what
+        makes a re-run idempotent. It must stay in step with the key used by
+        :meth:`generate`, so :meth:`generate` calls this rather than duplicating
+        the construction.
+        """
+        return GenerationCache.make_key(
+            {
+                "provider": self.provider.name,
+                "model": self.provider.model,
+                "prompt_version": prompt_version(),
+                "design_blueprint": design_blueprint,
+                "exercise_role": exercise_role.value,
+                "prerequisites": sorted(prerequisites or []),
+                **request.cache_parameters(),
+            }
+        )
+
     def generate(
         self,
         request: GenerationRequest,
@@ -305,16 +333,11 @@ class GenerationPipeline:
         # require generating it first, which would mean paying for an AI call
         # merely to discover the answer is already cached - defeating the
         # quota defence the cache exists to provide.
-        cache_key = GenerationCache.make_key(
-            {
-                "provider": self.provider.name,
-                "model": self.provider.model,
-                "prompt_version": prompt_version(),
-                "design_blueprint": design_blueprint,
-                "exercise_role": exercise_role.value,
-                "prerequisites": sorted(prerequisites or []),
-                **request.cache_parameters(),
-            }
+        cache_key = self.cache_key_for(
+            request,
+            design_blueprint=design_blueprint,
+            exercise_role=exercise_role,
+            prerequisites=prerequisites,
         )
 
         if use_cache:
