@@ -127,6 +127,71 @@ required to test CPractice itself.
 
 ---
 
+## License
+
+[MIT](LICENSE). See [`SECURITY.md`](SECURITY.md) for the (honest) threat model
+around submitting code for grading, and [`CONTRIBUTING.md`](CONTRIBUTING.md)
+before your first PR.
+
+---
+
+## Importing problem packages
+
+Bring a problem authored elsewhere (another instance, a human, a web agent)
+into CPractice with `POST /api/problems/import`. The body is one JSON document
+shaped like the packages on disk — metadata at the top level plus the content
+keys (`statement_md`, `starter_code`, `reference_solution`, `tests`, `hints`)
+— and the same deterministic quality gate that screens AI-generated packages
+runs over it. Rejected imports return the gate's findings and are **never**
+written to disk; accepted ones land with `status: validated`:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/problems/import \
+  -H 'Content-Type: application/json' \
+  -d @package.json && echo
+```
+
+## MCP server (agents, Claude Desktop, opencode)
+
+`app/mcp/` exposes the practice loop over the Model Context Protocol: the
+tutor/agent can read problems, submit code to the **deterministic grader**,
+walk the hint ladder, generate a problem set from your own known-concepts
+checklist, import packages, and review attempts. It is a thin HTTP client over
+this server (the AI never decides pass/fail; the grader's verdict is returned
+verbatim).
+
+```bash
+# 1) install the optional SDK (see requirements.txt for why it is separate)
+pip install "mcp==1.30.0"
+
+# 2) start the platform, then launch the MCP server
+./start.sh
+python -m app.mcp.server                    # stdio (client-launched)
+CPRACTICE_URL=http://127.0.0.1:8000 \
+  python -m app.mcp.server --transport streamable-http --port 8100
+```
+
+Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "cpractice": {
+      "command": "python",
+      "args": ["-m", "app.mcp.server"],
+      "cwd": "/path/to/cpractice",
+      "env": { "CPRACTICE_URL": "http://127.0.0.1:8000" }
+    }
+  }
+}
+```
+
+The MCP server binds to localhost and creates **no new security exposures
+relative to the API itself** — see [`SECURITY.md`](SECURITY.md) before
+exposing any of this beyond your own machine.
+
+---
+
 ## Status
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the milestone checklist and current
