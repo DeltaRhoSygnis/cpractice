@@ -19,3 +19,13 @@ httpx==0.28.1
 # --- Testing ---
 pytest==8.3.4
 pytest-asyncio==0.25.0
+
+# --- MCP server (optional) ---------------------------------------------------
+# Deliberately NOT in the pinned core stack: mcp>=2 requires pydantic>=2.12 /
+# starlette>=0.48, which conflicts with the pins above (target: the pinned
+# py3.12 Codespaces profile). Install it separately when you need
+# `python -m app.mcp.server` (Claude Desktop, opencode, web agent gateways):
+#
+#     pip install "mcp==1.30.0"
+#
+# The test suite skips MCP tests automatically when the SDK is absent.
