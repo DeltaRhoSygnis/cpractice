@@ -24,6 +24,10 @@ workspaces/*
 !workspaces/.gitkeep
 *.log
 
+# --- Packaging artifacts (pyproject) ---
+build/
+dist/
+
 # --- Generated problem packages (keep the shipped example) ---
 # AI-generated problems are ignored; the hand-authored example is tracked.
 problems/*
