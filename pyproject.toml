@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cpractice"
+version = "0.1.0"
+description = "AI-powered C programming practice with deterministic grading — AI generates and explains; deterministic software grades."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "CPractice contributors" }]
+keywords = ["c", "education", "practice", "grading", "compiler", "mcp"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Education",
+  "Programming Language :: C",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Education",
+]
+
+# Ranges (not pins) live here: this is the packaging interface. The reproducible
+# dev/prod environment is `requirements.txt`, which pins exact versions against
+# the Codespaces python3.12 profile; the running environment floats newer on
+# python🐍3.13+. Note that resolving `mcp==1.30.0` forces pydantic>=2.11 on
+# python < 3.14, which does satisfy the core range below.
+dependencies = [
+  "fastapi>=0.115.6",
+  "uvicorn>=0.34.0",
+  "python-multipart>=0.0.20",
+  "pydantic>=2.10.4,<3",
+  "pydantic-settings>=2.7.0",
+  "python-dotenv>=1.0.1",
+  "jsonschema>=4.23.0",
+  "httpx>=0.28.1,<1",
+]
+
+[project.optional-dependencies]
+# `pip install "cpractice[mcp]"` — needed only by the MCP server
+# (17 tools over stdio or streamable-http; see app/mcp/server.py).
+mcp = ["mcp==1.30.0"]
+dev = ["pytest==8.3.4", "pytest-asyncio==0.25.0"]
+
+[project.urls]
+# Repository URL is set when the project goes public.
+# Documentation lives in README.md, SECURITY.md and docs/.
+
+[project.scripts]
+cpractice-mcp = "app.mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+# The generation pipeline loads prompt templates from disk at runtime;
+# without these the wheel would import fine and fail on the first AI call.
+"app" = ["ai/prompts/*.md"]

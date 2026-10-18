@@ -21,6 +21,7 @@ project-level supported.
 ```bash
 pip install -r requirements.txt   # core stack (pins target py3.12; floats ok on 3.13+)
 pip install "mcp==1.30.0"         # optional: only needed by the MCP server
+pip install -e ".[mcp]"           # equivalent alternative: editable + mcp extra
 pytest                            # full suite
 pytest tests/test_import_api.py tests/test_mcp_server.py
 ```
