@@ -23,6 +23,16 @@ from pathlib import Path
 # applied incrementally later.
 SCHEMA_VERSION = 1
 
+#: Additive columns applied to the base schema after creation. Each entry is
+#: ``(table, column, declaration)``. They are applied idempotently (guarded by a
+#: ``PRAGMA table_info`` check), so both a fresh database and a pre-existing one
+#: converge on the same shape without dropping or altering existing columns.
+#: The prediction (`spec S6`) stores the learner's hypothesis; it is never
+#: scored and is nullable so every existing row reads back as NULL.
+_ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("attempts", "predicted_stdout", "TEXT"),
+)
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS problems (
     id            TEXT PRIMARY KEY,
@@ -84,6 +94,20 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS batch_provenance (
+    problem_id     TEXT PRIMARY KEY,
+    job_id         TEXT NOT NULL,
+    provider       TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    outcome        TEXT NOT NULL,
+    from_cache     INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_batch_provenance_job ON batch_provenance(job_id);
 """
 
 
@@ -141,7 +165,29 @@ class Database:
     def _initialise(self) -> None:
         connection = self.connect()
         connection.executescript(_SCHEMA)
+        self._apply_migrations(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    def _apply_migrations(self, connection: sqlite3.Connection) -> None:
+        """Apply additive columns idempotently.
+
+        ``executescript`` above already creates any missing table with the base
+        schema, but a table that existed *before* a column was added is left
+        untouched by ``CREATE TABLE IF NOT EXISTS``. This walks each additive
+        column and adds it only when absent, so running the migration twice is a
+        no-op and an old database keeps working.
+        """
+        for table, column, declaration in _ADDITIVE_COLUMNS:
+            existing = {
+                row["name"]
+                for row in connection.execute(f"PRAGMA table_info({table})")
+            }
+            if column not in existing:
+                # ``table``/``column``/``declaration`` are module constants, not
+                # user input; identifiers cannot be parameterised anyway.
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {declaration}"
+                )
 
     @property
     def schema_version(self) -> int:

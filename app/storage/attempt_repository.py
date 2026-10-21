@@ -28,6 +28,9 @@ class AttemptRecord:
     verdict: str
     duration_ms: int
     hints_used: int
+    #: The learner's optional prediction for the sample test (spec S6). Stored,
+    #: never scored; ``None`` for attempts without one and for legacy rows.
+    predicted_stdout: str | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -49,8 +52,15 @@ class AttemptRepository:
         problem_id: str,
         hints_used: int = 0,
         verdict: str = "",
+        predicted_stdout: str | None = None,
     ) -> int:
-        """Persist a graded attempt plus its per-test results. Returns its id."""
+        """Persist a graded attempt plus its per-test results. Returns its id.
+
+        ``predicted_stdout`` records the learner's optional prediction for the
+        sample test (spec S6). It is stored verbatim and **never** scored: it
+        cannot change the compiled outcome, the pass counts, or the verdict. The
+        keyword defaults to ``None`` so every existing caller is unaffected.
+        """
         duration_ms = sum(t.duration_ms for t in report.tests) + report.compilation.duration_ms
         resolved_verdict = verdict or _verdict(report)
 
@@ -58,8 +68,8 @@ class AttemptRepository:
             cursor = connection.execute(
                 """
                 INSERT INTO attempts
-                    (problem_id, compilation_ok, passed, total, verdict, duration_ms, hints_used)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (problem_id, compilation_ok, passed, total, verdict, duration_ms, hints_used, predicted_stdout)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     problem_id,
@@ -69,6 +79,7 @@ class AttemptRepository:
                     resolved_verdict,
                     duration_ms,
                     hints_used,
+                    predicted_stdout,
                 ),
             )
             attempt_id = int(cursor.lastrowid)
@@ -119,6 +130,8 @@ class AttemptRepository:
         return _row_to_attempt(row) if row else None
 
     def test_results(self, attempt_id: int) -> list[dict[str, Any]]:
+        # Explicit column list: predicted_stdout is attempt metadata, not a test
+        # result, and hidden expected output is never in this table at all.
         rows = (
             self.database.connect()
             .execute(
@@ -213,6 +226,7 @@ def _row_to_attempt(row) -> AttemptRecord:
         verdict=row["verdict"],
         duration_ms=int(row["duration_ms"]),
         hints_used=int(row["hints_used"]),
+        predicted_stdout=row["predicted_stdout"],
     )
 
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from app.schemas.problem import ProblemKind
+
 # --- JSON schema handed to the provider for structured output -------------
 
 PROBLEM_JSON_SCHEMA: dict = {
@@ -68,6 +70,9 @@ PROBLEM_JSON_SCHEMA: dict = {
             },
         },
         "solution_explanation": {"type": "string"},
+        # Optional partial scaffold for a problem set (spec S4). Distinct from
+        # the hint ladder: structure, not the final logic.
+        "hint_code": {"type": "string"},
     },
     "required": [
         "id",
@@ -105,14 +110,24 @@ EXACT id strings declared in the blueprint's `likely_misconceptions` (the \
 leading `MIS-...` token) so the package can prove each misconception is \
 exercised.
 
+Distribution code (`starter_code`) rules you must follow:
+10. The starter code MUST compile cleanly as C11 (the learner can run the \
+checker immediately). It may be incomplete, but it must be valid C.
+11. The starter code MUST NOT pass the tests on its own. It must be missing at \
+least one piece of real logic, so completing it is the task.
+12. The starter code MUST contain at least one `TODO` comment marking exactly \
+what the learner has to implement. Mark missing decisions, not formatting.
+13. The starter code MUST NOT be the reference solution. Never ship the answer \
+as the starter.
+
 Consistency rules you must not break:
-10. State the task once and mean it. Do not narrate doubt, self-correct, or \
+14. State the task once and mean it. Do not narrate doubt, self-correct, or \
 write phrases such as "wait", "actually", or "correcting" anywhere in the \
 statement, examples, or explanations.
-11. Every example must be correct for the stated contract. Work each example \
+15. Every example must be correct for the stated contract. Work each example \
 out by hand from the specification before writing its expected output; an \
 example that disagrees with the contract is a fatal error.
-12. The examples, the tests, and the reference solution must all describe the \
+16. The examples, the tests, and the reference solution must all describe the \
 same behaviour. If the reference and an expected value disagree, the package \
 is wrong - fix it before replying, do not ship the disagreement.
 
@@ -133,6 +148,18 @@ class GenerationRequest:
     stdout_format: str = "one value followed by a newline"
     hints_enabled: bool = True
     forbidden: list[str] = field(default_factory=list)
+    #: Whether the output should be a standalone exercise (default) or a
+    #: problem set (spec S7). A problem set additionally requires a concept pair.
+    kind: ProblemKind = ProblemKind.EXERCISE
+    #: The one concept the problem set introduces. Required for problem sets.
+    new_concept: str = ""
+    #: The known concepts the new one is combined with. Required (non-empty)
+    #: for problem sets; checked for legality by the gate, not by the AI.
+    assumed_known: list[str] = field(default_factory=list)
+
+    @property
+    def is_problem_set(self) -> bool:
+        return self.kind is ProblemKind.PROBLEM_SET
 
     def cache_parameters(self) -> dict:
         """Stable representation used for cache keys."""
@@ -145,6 +172,9 @@ class GenerationRequest:
             "stdout_format": self.stdout_format,
             "hints_enabled": self.hints_enabled,
             "forbidden": sorted(self.forbidden),
+            "kind": self.kind.value,
+            "new_concept": self.new_concept,
+            "assumed_known": sorted(self.assumed_known),
         }
 
 
@@ -152,6 +182,9 @@ def build_generation_prompt(request: GenerationRequest) -> str:
     """Render the user prompt for a generation request."""
     skills = ", ".join(request.target_skills) if request.target_skills else "(you choose, appropriate to the topic)"
     forbidden = ", ".join(request.forbidden) if request.forbidden else "(none)"
+
+    if request.is_problem_set:
+        return _build_problem_set_prompt(request, skills=skills, forbidden=forbidden)
 
     return f"""\
 Create one C programming exercise with these parameters:
@@ -173,10 +206,80 @@ Before returning, verify your own package:
   test, and that examples and tests do not contradict each other.
 - Confirm each test carries `requirement_ids` and `misconception_ids`, using the
   blueprint's declared `MIS-...` ids.
+- Confirm `starter_code` compiles as C11, contains at least one `TODO` comment,
+  does NOT pass the tests on its own, and is not the reference solution.
 
 Deliver the exercise as JSON matching the schema. Include boundary cases among
 the hidden tests, and make sure there are at least three public and at least
 two hidden tests."""
+
+
+def _build_problem_set_prompt(
+    request: GenerationRequest, *, skills: str, forbidden: str
+) -> str:
+    """Render a prompt for a CS50-style problem set (spec S7).
+
+    A problem set is not a bigger exercise: it is a real-world scenario that
+    forces the learner to combine one *new* concept with concepts they already
+    know, completed by editing supplied distribution code.
+    """
+    known = ", ".join(request.assumed_known) if request.assumed_known else "(none declared)"
+    new_concept = request.new_concept or "(unspecified)"
+
+    return f"""\
+Create one C **problem set** — a CS50-style practice task completed by editing
+distribution code. It is not a standalone exercise; it must have all of the
+following.
+
+- Topic / subject area: {request.topic}
+- Difficulty: {request.difficulty}
+- Target skills: {skills}
+- Input format: {request.stdin_format}
+- Output format: {request.stdout_format}
+- Additional constraints: {request.constraints or "(none)"}
+- Forbidden constructs: {forbidden}
+- Include progressive hints: {"yes" if request.hints_enabled else "no"}
+
+Concept rule (this is the point of a problem set):
+- The task must exercise exactly ONE new concept: `{new_concept}`.
+- It must also genuinely require the learner to USE the concepts they already
+  know: {known}. Combine the new concept with those known concepts in a single
+  program — do not isolate the new concept.
+- Do NOT require any concept beyond `{new_concept}` and those listed as known.
+
+Scenario rule:
+- Frame the task as a realistic scenario (for example: a shop's sales log, a
+  class's reading levels, a voting tally, a sensor reading history). The
+  scenario must force the concepts to work together; it is not decoration.
+- State the task once and do not narrate doubt or self-correct.
+
+Distribution code rule (this is what the learner edits):
+- `starter_code` is the file handed to the learner. It MUST compile cleanly as
+  C11 and it MUST already contain the program's skeleton (declarations, input
+  reading, the outline of the logic).
+- `starter_code` MUST contain at least one `TODO` comment marking exactly the
+  decision(s) the learner must implement. Mark real missing logic, not
+  formatting.
+- `starter_code` MUST NOT pass the tests on its own and MUST NOT be the
+  reference solution. The learner's job is to complete it.
+- Optionally supply `hint_code`: a partial scaffold (never the finished logic)
+  that shows structure without giving the answer.
+
+Test suite rule:
+- Provide a full tagged suite: at least three public and at least two hidden
+  tests, including genuine boundary and misconception cases.
+- Every test must carry `requirement_ids` and `misconception_ids`, using the
+  blueprint's declared `MIS-...` ids.
+
+Before returning, verify your own package:
+- Re-read the statement and confirm every example agrees with it.
+- Confirm the reference solution produces exactly the expected output for every
+  test, and that examples and tests do not contradict each other.
+- Confirm `starter_code` compiles as C11, carries `TODO`s, does not pass the
+  tests on its own, and is not the reference solution.
+- Confirm the reference uses no concept outside `{new_concept}` and {known}.
+
+Deliver the problem set as JSON matching the schema."""
 
 
 def build_repair_prompt(

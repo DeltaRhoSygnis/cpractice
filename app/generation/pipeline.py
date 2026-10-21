@@ -47,9 +47,19 @@ from app.generation.prompts import (
     parse_json_response,
 )
 from app.generation.quality_gate import QualityGate, QualityReport, apply_status
-from app.schemas.problem import CONTENT_KEYS, Problem, ProblemMetadata
+from app.schemas.problem import (
+    CONTENT_KEYS,
+    ConceptPair,
+    Distribution,
+    PredictionPlan,
+    Problem,
+    ProblemKind,
+    ProblemMetadata,
+)
 from app.schemas.pedagogy import ExerciseRole, Pedagogy
 from app.schemas.test_case import TestCase, Visibility
+from app.services.checker import build_checker
+from app.services.distribution import count_todos
 
 
 class GenerationError(RuntimeError):
@@ -150,6 +160,85 @@ def _derive_requirement_ids(
     return requirements
 
 
+def _fold_hint_code(payload: dict) -> dict:
+    """Move a top-level ``hint_code`` into the distribution metadata.
+
+    The model is asked for an optional partial scaffold as ``hint_code`` (spec
+    S4). It belongs to ``metadata.distribution``, but ``normalize_payload``
+    keeps only known metadata/content keys, so the top-level field would be
+    dropped. Folding it in here - before normalisation - preserves it without
+    teaching the normaliser about a problem-set-only field.
+    """
+    hint_code = payload.get("hint_code")
+    if not isinstance(hint_code, str) or not hint_code.strip():
+        return payload
+
+    folded = dict(payload)
+    distribution = folded.get("distribution")
+    if not isinstance(distribution, dict):
+        distribution = {}
+    distribution.setdefault("hint_code", hint_code)
+    folded["distribution"] = distribution
+    return folded
+
+
+def _build_problem_set_metadata(
+    problem: Problem, request: GenerationRequest
+) -> Problem:
+    """Attach the problem-set artefacts a model must not author (spec S7).
+
+    The concept pair, the distribution metadata, the checker and the prediction
+    plan are all *derived deterministically* from the problem and the request -
+    the AI supplies the scenario, distribution code and tests, never the rule
+    that decides whether they are legal or how they are presented.
+    """
+    if not request.new_concept:
+        raise GenerationError(
+            "a problem set requires a new_concept; none was supplied"
+        )
+
+    try:
+        concept = ConceptPair(
+            new_concept=request.new_concept,
+            assumed_known=list(request.assumed_known),
+        )
+    except ValidationError as exc:
+        raise GenerationError(
+            f"problem-set concept pair is invalid: {exc}"
+        ) from exc
+
+    # ``has_starter`` and ``todo_count`` describe the code actually shipped, so
+    # they are computed from it rather than trusted from the model. A hint code
+    # (partial scaffold), when the model supplied one, is preserved.
+    distribution = Distribution(
+        has_starter=bool(problem.starter_code.strip()),
+        todo_count=count_todos(problem.starter_code),
+        hint_code=problem.metadata.distribution.hint_code,
+    )
+
+    # Predict-then-verify is offered against the first public sample (spec S6).
+    sample = problem.public_tests[0].id if problem.public_tests else None
+    prediction = PredictionPlan(enabled=sample is not None, sample_test_id=sample)
+
+    metadata = problem.metadata.model_copy(
+        update={
+            "kind": ProblemKind.PROBLEM_SET,
+            "concept": concept,
+            "distribution": distribution,
+            "prediction": prediction,
+        }
+    )
+    problem = problem.model_copy(update={"metadata": metadata})
+
+    # The checker is built last: it maps one-to-one over the final test list.
+    checker = build_checker(problem)
+    return problem.model_copy(
+        update={
+            "metadata": problem.metadata.model_copy(update={"checker": checker})
+        }
+    )
+
+
 class GenerationPipeline:
     """Generates, validates, and persists problem packages."""
 
@@ -163,13 +252,19 @@ class GenerationPipeline:
         retry_policy: RetryPolicy | None = None,
         sleep=None,
         repair_attempts: int = 0,
+        known_concepts: list[str] | None = None,
     ) -> None:
         self.provider = provider
         self.problems_dir = Path(problems_dir)
         self.cache = cache or GenerationCache(self.problems_dir / ".cache")
         # Generated problems are held to the full quality standard, including
         # calibration. Hand-authored or legacy content uses the default gate.
-        self.gate = gate or QualityGate(calibration_enabled=True)
+        # The learner's known-concepts checklist drives concept legality for
+        # problem sets (spec S3); it defaults to empty (see the gate).
+        self.known_concepts: list[str] = list(known_concepts or [])
+        self.gate = gate or QualityGate(
+            calibration_enabled=True, known_concepts=self.known_concepts
+        )
         self.retry_policy = retry_policy or RetryPolicy()
         self._sleep = sleep
         #: Bounded repair attempts before a failing package is discarded.
@@ -177,30 +272,23 @@ class GenerationPipeline:
 
     # -- public API --------------------------------------------------------
 
-    def generate(
+    def cache_key_for(
         self,
         request: GenerationRequest,
         *,
-        use_cache: bool = True,
         design_blueprint: bool = True,
         exercise_role: ExerciseRole = ExerciseRole.CORE_REASONING,
         prerequisites: list[str] | None = None,
-    ) -> GenerationOutcome:
-        """Generate one validated problem, or raise :class:`GenerationError`.
+    ) -> str:
+        """The content-addressed cache key for a request (spec S7).
 
-        When ``design_blueprint`` is set, the learning objective is designed
-        **before** the problem and used to steer generation (plan Stage 1 -> 2).
-        This is what prevents a generic textbook exercise: the prompt states the
-        reasoning moves required and the misconceptions the tests must catch.
+        Exposed so a batch runner can consult the cache *before* submitting a
+        job: a pset already prepared must cost no provider call, which is what
+        makes a re-run idempotent. It must stay in step with the key used by
+        :meth:`generate`, so :meth:`generate` calls this rather than duplicating
+        the construction.
         """
-        blueprint: Pedagogy | None = None
-
-        # The cache is keyed on the *request*, not on the blueprint, so a cache
-        # hit costs no provider call at all. Keying on the blueprint would
-        # require generating it first, which would mean paying for an AI call
-        # merely to discover the answer is already cached - defeating the
-        # quota defence the cache exists to provide.
-        cache_key = GenerationCache.make_key(
+        return GenerationCache.make_key(
             {
                 "provider": self.provider.name,
                 "model": self.provider.model,
@@ -212,11 +300,51 @@ class GenerationPipeline:
             }
         )
 
+    def generate(
+        self,
+        request: GenerationRequest,
+        *,
+        use_cache: bool = True,
+        design_blueprint: bool = True,
+        exercise_role: ExerciseRole = ExerciseRole.CORE_REASONING,
+        prerequisites: list[str] | None = None,
+        known_concepts: list[str] | None = None,
+    ) -> GenerationOutcome:
+        """Generate one validated problem, or raise :class:`GenerationError`.
+
+        When ``design_blueprint`` is set, the learning objective is designed
+        **before** the problem and used to steer generation (plan Stage 1 -> 2).
+        This is what prevents a generic textbook exercise: the prompt states the
+        reasoning moves required and the misconceptions the tests must catch.
+
+        ``known_concepts`` overrides the gate's configured checklist for this
+        call (the generation API reads the learner's stored preferences and
+        passes them here). It affects *acceptance*, not generation, so it is
+        deliberately absent from the cache key.
+        """
+        gate = self.gate if known_concepts is None else self.gate.with_checklist(
+            known_concepts
+        )
+
+        blueprint: Pedagogy | None = None
+
+        # The cache is keyed on the *request*, not on the blueprint, so a cache
+        # hit costs no provider call at all. Keying on the blueprint would
+        # require generating it first, which would mean paying for an AI call
+        # merely to discover the answer is already cached - defeating the
+        # quota defence the cache exists to provide.
+        cache_key = self.cache_key_for(
+            request,
+            design_blueprint=design_blueprint,
+            exercise_role=exercise_role,
+            prerequisites=prerequisites,
+        )
+
         if use_cache:
             cached = self.cache.get(cache_key)
             if cached is not None:
                 problem = self._problem_from_payload(cached)
-                report = self.gate.check(problem)
+                report = gate.check(problem)
                 if report.valid:
                     return GenerationOutcome(problem=problem, quality=report, from_cache=True)
 
@@ -234,6 +362,8 @@ class GenerationPipeline:
                         exercise_role=exercise_role,
                         prerequisites=list(prerequisites or []),
                         forbid=list(request.forbidden),
+                        is_problem_set=request.is_problem_set,
+                        new_concept=request.new_concept,
                     )
                 )
             except (BlueprintError, AIProviderError) as exc:
@@ -258,7 +388,13 @@ class GenerationPipeline:
         # the point of tagging.
         problem = _backfill_test_tags(problem)
 
-        report = self.gate.check(problem)
+        # A problem set gets its concept pair, distribution metadata, checker
+        # and prediction plan attached deterministically (spec S7). The model
+        # never authors the rule that decides legality or presentation.
+        if request.is_problem_set:
+            problem = _build_problem_set_metadata(problem, request)
+
+        report = gate.check(problem)
 
         # Bounded repair (plan Stage 10): a package that fails for a *fixable*
         # reason gets one attempt, with the findings fed back to the model. Any
@@ -266,7 +402,8 @@ class GenerationPipeline:
         # lowered to accommodate a stubborn package.
         if not report.valid and self.repair_attempts > 0:
             repaired = self._attempt_repair(
-                request, blueprint, problem, report, attempts=self.repair_attempts
+                request, blueprint, problem, report, attempts=self.repair_attempts,
+                gate=gate,
             )
             if repaired is not None:
                 problem, report = repaired
@@ -299,6 +436,16 @@ class GenerationPipeline:
             problem.reference_solution, encoding="utf-8"
         )
 
+        # Distribution metadata (has_starter, todo_count, hint_code) lives in
+        # problem.json. The hint scaffold, when present, is also written beside
+        # the starter so a reviewer can see exactly what was shipped.
+        hint_code = problem.metadata.distribution.hint_code
+        if hint_code.strip():
+            (package_dir / "hint").mkdir(parents=True, exist_ok=True)
+            (package_dir / "hint" / problem.metadata.entrypoint).write_text(
+                hint_code, encoding="utf-8"
+            )
+
         payload = self._problem_to_payload(problem)
         (package_dir / "problem.json").write_text(
             json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -319,6 +466,7 @@ class GenerationPipeline:
         report: QualityReport,
         *,
         attempts: int,
+        gate: QualityGate | None = None,
     ) -> tuple[Problem, QualityReport] | None:
         """Try once to fix a failing package, feeding the findings back.
 
@@ -328,6 +476,8 @@ class GenerationPipeline:
         """
         if not report.errors:
             return None
+
+        gate = gate or self.gate
 
         prompt = build_repair_prompt(
             problem=problem,
@@ -359,7 +509,16 @@ class GenerationPipeline:
             if blueprint is not None and candidate.pedagogy is None:
                 candidate = candidate.model_copy(update={"pedagogy": blueprint})
 
-            candidate_report = self.gate.check(candidate)
+            # A repaired package is a problem set too when the request was: the
+            # derived artefacts (concept, distribution, checker) must be
+            # re-attached or the repair would ship a pset missing its checker.
+            if request.is_problem_set:
+                try:
+                    candidate = _build_problem_set_metadata(candidate, request)
+                except GenerationError:
+                    continue
+
+            candidate_report = gate.check(candidate)
             if candidate_report.valid:
                 return candidate, candidate_report
 
@@ -416,6 +575,7 @@ class GenerationPipeline:
         split ``public_tests``/``hidden_tests``, a scalar ``topic``) are mapped
         onto the canonical shape before validation.
         """
+        payload = _fold_hint_code(payload)
         payload = normalize_payload(payload)
 
         # Normalisation must never silently change the test set. Any dropped

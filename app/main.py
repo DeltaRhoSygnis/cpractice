@@ -17,9 +17,10 @@ from fastapi.staticfiles import StaticFiles
 from app.ai.base import AIProviderError, AuthError
 from app.ai.cache import GenerationCache
 from app.ai.google import GoogleProvider
+from app.ai.google_batch import GoogleBatchProvider
 from app.ai.kenari import KenariProvider
 from app.ai.rate_limits import RetryPolicy
-from app.api import generation, health, problems, progress, submissions
+from app.api import generation, health, preferences, problems, progress, submissions
 from app.config import Settings, get_settings
 from app.feedback.hint_service import HintService
 from app.generation.pipeline import GenerationPipeline
@@ -30,7 +31,11 @@ from app.services.submission_service import SubmissionService
 from app.storage.attempt_repository import AttemptRepository, ProblemIndex
 from app.storage.database import Database
 from app.storage.problem_repository import ProblemRepository
-from app.storage.usage_ledger import LedgeredProvider, UsageLedger
+from app.storage.usage_ledger import (
+    BatchProvenanceStore,
+    LedgeredProvider,
+    UsageLedger,
+)
 
 logger = logging.getLogger("cpractice")
 
@@ -87,6 +92,26 @@ def _build_generation_pipeline(settings: Settings, ledger: UsageLedger) -> Gener
     )
 
 
+def _build_batch_provider(settings: Settings):
+    """Build the batch provider, or None when the batch API is unavailable.
+
+    The Gemini Batch API is the only batch adapter in this cut (spec S7). It
+    requires a Google key; when none is configured, shelf preparation is simply
+    disabled and single-request generation is unaffected.
+    """
+    if settings.ai_provider != "google":
+        logger.info(
+            "batch preparation disabled (provider=%s); Gemini Batch API only",
+            settings.ai_provider,
+        )
+        return None
+    try:
+        return GoogleBatchProvider(settings.google_api_key, model=settings.ai_model)
+    except AuthError:
+        logger.info("no GOOGLE_API_KEY configured; batch preparation disabled")
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application startup/shutdown hooks."""
@@ -98,6 +123,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.attempt_repository = AttemptRepository(database)
     app.state.problem_index = ProblemIndex(database)
     app.state.usage_ledger = UsageLedger(database)
+    app.state.batch_provenance_store = BatchProvenanceStore(database)
     app.state.adaptive_planner = AdaptivePlanner()
     app.state.practice_sequencer = PracticeSequencer()
 
@@ -105,6 +131,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _sync_problem_index(app)
 
     app.state.generation_pipeline = _build_generation_pipeline(settings, app.state.usage_ledger)
+    # A batch provider is optional and independent of the interactive pipeline:
+    # a shelf run uses the pipeline but submits through the batch transport.
+    app.state.batch_provider = _build_batch_provider(settings)
     # Reuse the pipeline's provider for hint generation; stored hints work
     # regardless, so this stays optional.
     provider = app.state.generation_pipeline.provider if app.state.generation_pipeline else None
@@ -159,6 +188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(generation.router, prefix="/api")
     app.include_router(submissions.router, prefix="/api")
     app.include_router(progress.router, prefix="/api")
+    app.include_router(preferences.router, prefix="/api")
 
     # --- Static frontend ---
     # Mounted last so it never shadows /api routes.

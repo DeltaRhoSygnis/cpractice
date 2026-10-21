@@ -24,11 +24,18 @@ workspaces/*
 !workspaces/.gitkeep
 *.log
 
+# --- Packaging artifacts (pyproject) ---
+build/
+dist/
+
 # --- Generated problem packages (keep the shipped example) ---
 # AI-generated problems are ignored; the hand-authored example is tracked.
 problems/*
 !problems/c-sum-two-integers/
 problems/c-sum-two-integers/quality_report.json
+# Hand-authored problem-set fixture proving the distribution-code contract (S4).
+!problems/pset-vote-tally/
+problems/pset-vote-tally/quality_report.json
 
 # --- OS / editor ---
 .DS_Store
@@ -39,3 +46,6 @@ Thumbs.db
 
 # --- OpenCode local ---
 .opencode/local/
+
+# --- Private agent toolkit (kept local, stop shipping to the public repo) ---
+.opencode/

@@ -149,6 +149,18 @@ const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
 const STATUS_WORD = { ok: "OK", warn: "Warning", fail: "Failed", pending: "Pending" };
 
+/* Checker states. Like every other status in this UI, pass/fail/blocked is
+   carried by icon + text + colour, never by colour alone: each row pairs a
+   glyph with a visually-hidden status word so a screen reader hears the
+   outcome rather than relying on the tint. */
+const CHECK_ICON = { pass: "✔", fail: "✘", blocked: "⋯" };
+const CHECK_WORD = { pass: "Passed", fail: "Failed", blocked: "Blocked" };
+const CHECK_CAUSE = {
+  "compilation failed": "can't check until the program compiles",
+  "submission not found": "nothing was submitted",
+  "did not pass": "the program produced the wrong output",
+};
+
 function statusLine(state, text) {
   return el("li", { class: `status-line status-line--${state}` }, [
     el("span", { class: "status-icon", "aria-hidden": "true", text: STATUS_ICON[state] }),
@@ -924,6 +936,45 @@ function renderObjectiveCard(pedagogy) {
   return card;
 }
 
+/**
+ * The checker, rendered as an ordered list mirroring the server's check order
+ * (exists, compiles, then one check per test). A "blocked" check could not run
+ * yet because a dependency failed — it is deliberately distinct from a failure
+ * so the learner is not blamed for a check the grader never reached.
+ *
+ * Returned as a document fragment so it slots next to the other result pieces.
+ */
+function renderChecker(checks) {
+  const fragment = document.createDocumentFragment();
+  if (!checks || !checks.length) return fragment;
+
+  fragment.append(el("h3", { text: "Checker" }));
+  const list = el("ul", { class: "check-list", "aria-label": "Checker results" });
+  for (const check of checks) {
+    const state = check.blocked ? "blocked" : check.passed ? "pass" : "fail";
+    const body = [
+      el("div", { class: "check-row__name", text: check.description || check.name }),
+    ];
+    const explanation = check.blocked
+      ? (CHECK_CAUSE[check.cause] || "a previous check didn't pass")
+      : state === "fail"
+        ? (CHECK_CAUSE[check.cause] || "did not pass")
+        : null;
+    if (explanation) {
+      body.push(el("div", { class: "check-row__detail", text: explanation }));
+    }
+    list.append(
+      el("li", { class: `check-row check-row--${state}` }, [
+        el("span", { class: "check-row__icon", "aria-hidden": "true", text: CHECK_ICON[state] }),
+        el("span", { class: "visually-hidden", text: `${CHECK_WORD[state]}: ` }),
+        el("span", { class: "check-row__body" }, body),
+      ]),
+    );
+  }
+  fragment.append(list);
+  return fragment;
+}
+
 function renderResult(result) {
   const fragment = document.createDocumentFragment();
   const summary = result.summary || {};
@@ -968,6 +1019,9 @@ function renderResult(result) {
       codeBlock(result.compilation.diagnostics),
     );
   }
+
+  // The checker is the pset-facing view; problems without one render nothing.
+  fragment.append(renderChecker(result.checks));
 
   const tests = result.tests || [];
   if (tests.length) {

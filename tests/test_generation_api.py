@@ -216,3 +216,73 @@ def test_rejected_problem_is_reported_with_findings(tmp_path: Path) -> None:
     assert body["accepted"] is False
     assert body["status"] == "rejected"
     assert any(f["code"] == "reference-does-not-compile" for f in body["errors"])
+
+
+# --- problem sets ----------------------------------------------------------
+
+
+def test_problem_set_request_uses_the_stored_checklist(tmp_path: Path) -> None:
+    """A pset generated through the API is checked against the saved checklist.
+
+    The checklist is stored through the preferences API; the generation
+    endpoint must read it so a legitimate known+new combination is accepted
+    rather than rejected against an empty default.
+    """
+    from tests.test_pset_generation import pset_response, BLUEPRINT_JSON as PSET_BLUEPRINT
+
+    app = create_app(_settings(tmp_path))
+    provider = MockProvider(
+        responder=lambda system, prompt, operation: (
+            PSET_BLUEPRINT if operation == "build_blueprint" else pset_response()
+        )
+    )
+    with TestClient(app) as client:
+        app.state.generation_pipeline = GenerationPipeline(
+            provider, problems_dir=tmp_path / "problems", sleep=lambda _: None
+        )
+        client.put(
+            "/api/preferences/known-concepts",
+            json={"known_concepts": ["input_output", "for_loops"]},
+        )
+        response = client.post(
+            "/api/problems/generate",
+            json={
+                "kind": "problem_set",
+                "new_concept": "arrays",
+                "assumed_known": ["for_loops", "input_output"],
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["accepted"] is True
+    assert body["problem_id"] == "c-sales-tally"
+
+
+def test_problem_set_request_without_checklist_is_rejected(tmp_path: Path) -> None:
+    """No saved checklist means no concepts are assumed known (spec S3)."""
+    from tests.test_pset_generation import pset_response, BLUEPRINT_JSON as PSET_BLUEPRINT
+
+    app = create_app(_settings(tmp_path))
+    provider = MockProvider(
+        responder=lambda system, prompt, operation: (
+            PSET_BLUEPRINT if operation == "build_blueprint" else pset_response()
+        )
+    )
+    with TestClient(app) as client:
+        app.state.generation_pipeline = GenerationPipeline(
+            provider, problems_dir=tmp_path / "problems", sleep=lambda _: None
+        )
+        response = client.post(
+            "/api/problems/generate",
+            json={
+                "kind": "problem_set",
+                "new_concept": "arrays",
+                "assumed_known": ["for_loops", "input_output"],
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["accepted"] is False
+    assert any(f["code"] == "concept-above-frontier" for f in body["errors"])

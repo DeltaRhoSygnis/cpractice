@@ -29,6 +29,9 @@ class SubmitRequest(BaseModel):
     source: str = Field(min_length=1)
     #: How many hints the learner has already consumed, for ladder position.
     hints_used: int = Field(default=0, ge=0, le=5)
+    #: Optional hypothesis: what the learner expects the program to print
+    #: (spec S6). Recorded and diffed, never graded.
+    predicted_stdout: str | None = Field(default=None, max_length=4096)
 
 
 class HintRequest(BaseModel):
@@ -62,7 +65,9 @@ def submit(request: Request, problem_id: str, body: SubmitRequest) -> dict:
     problem = _load_problem(request, problem_id)
 
     try:
-        outcome = request.app.state.submission_service.submit(problem, body.source)
+        outcome = request.app.state.submission_service.submit(
+            problem, body.source, predicted_stdout=body.predicted_stdout
+        )
     except SubmissionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -77,6 +82,7 @@ def submit(request: Request, problem_id: str, body: SubmitRequest) -> dict:
             problem_id=problem.id,
             hints_used=body.hints_used,
             verdict=payload["verdict"],
+            predicted_stdout=body.predicted_stdout,
         )
         payload["attempt_id"] = attempt_id
     except Exception as exc:  # pragma: no cover - history is best-effort

@@ -18,6 +18,7 @@ from app.main import create_app
 WEB = Path(__file__).resolve().parent.parent / "web"
 REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "problems"
 EXAMPLE_ID = "c-sum-two-integers"
+PSET_ID = "pset-vote-tally"
 
 
 @pytest.fixture()
@@ -310,6 +311,54 @@ def test_pedagogy_renders_learning_objective_card() -> None:
     # The role enum is shown as a human label, not the machine value.
     assert "core reasoning" in script
     assert "ROLE_LABEL" in script
+
+
+def test_workspace_renders_the_checker() -> None:
+    """The workspace renders the pset checker with an icon + text + colour.
+
+    The check list is a real ordered list, and each state pairs a glyph with a
+    visually-hidden status word, so pass/fail/blocked is never colour-only.
+    """
+    script = (WEB / "app.js").read_text(encoding="utf-8")
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+
+    assert "renderChecker" in script
+    assert "result.checks" in script
+    assert "check-list" in script
+    # Icons for all three states, including the blocked glyph.
+    assert "CHECK_ICON" in script
+    assert '"✔"' in script and '"✘"' in script and '"⋯"' in script
+    # A non-colour cue rides alongside each row.
+    assert "CHECK_WORD" in script
+    # Colour classes exist for each state, plus a forced-colors shape cue.
+    assert ".check-row--pass" in css
+    assert ".check-row--fail" in css
+    assert ".check-row--blocked" in css
+    assert "forced-colors" in css
+
+
+def test_problem_set_submission_shape_includes_checks(client: TestClient) -> None:
+    body = client.post(
+        f"/api/problems/{PSET_ID}/submit",
+        json={"source": "int main(void){return 0;}", "hints_used": 0},
+    ).json()
+
+    assert "checks" in body
+    assert body["checks"][0]["name"] == "exists"
+    assert body["checks"][1]["name"] == "compiles"
+    for check in body["checks"]:
+        for key in ("name", "description", "passed", "blocked", "visibility"):
+            assert key in check, f"UI renders {key}"
+
+
+def test_legacy_exercise_submission_has_no_checks(client: TestClient) -> None:
+    """The checker addition must not change an exercise's payload shape."""
+    body = client.post(
+        f"/api/problems/{EXAMPLE_ID}/submit",
+        json={"source": "int main(void){return 0;}", "hints_used": 0},
+    ).json()
+
+    assert "checks" not in body
 
 
 def test_error_card_uses_http_status_not_message_regex() -> None:
