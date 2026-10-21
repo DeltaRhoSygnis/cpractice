@@ -195,6 +195,10 @@ attempts, and hidden-data separation.
 - [x] M7 — Adaptive practice
 - [ ] M7 — Adaptive practice
 - [ ] M8 — Hosted deployment readiness
+- [x] P1–P7 — Problem-set engine (concept ladder, distribution code,
+  check50-style checker, predict-then-verify, batch shelf preparation).
+  Spec: [`docs/specs/2026-10-11-pset-engine-design.md`](specs/2026-10-11-pset-engine-design.md);
+  plan: [`docs/specs/2026-10-11-pset-engine-plan.md`](specs/2026-10-11-pset-engine-plan.md)
 
 ### M1 delivered
 

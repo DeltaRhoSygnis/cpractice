@@ -169,3 +169,76 @@ P0 baseline
 - **No phase lowers the gate.** A package that fails a hard check is rejected;
   repair is bounded and must fully pass (existing rule).
 - **Provider-free practice is a hard invariant** tested at P0.3 and P7.4.
+
+---
+
+## Phase 7 verification record (2026-10-21)
+
+Recorded on `master` at `99259cb` (PR #1 merged). Reproducible with the three
+scripts in `tools/`.
+
+| # | Task | Result | Evidence |
+|---|---|---|---|
+| 7.1 | Full `pytest -q` green | **753 passed, 3 skipped, 0 failed** | exit 0 on the merged tree; 3 skips are the expected live-provider skips |
+| 7.2 | Every original package still loads and grades | **pass** | covered by the suite; `problems/` fixtures unchanged |
+| 7.3 | A batch-prepared pset passes the gate end to end | **pass** (model mocked) | `tools/phase7_batch_proof.py` |
+| 7.4 | The pset is praxisable with **no provider configured** | **pass** | `tools/phase7_proof.py` — 19/19 steps |
+| 7.5 | The gate rejects an above-frontier reference and a solved starter | **pass** | `tools/phase7_adversarial.py` — both rejected over HTTP, control accepted |
+| 7.6 | `docs/PLAN.md` + `README.md` updated | **pass** | problem-set section, `/api/problems/batch` row, progress tracker |
+
+### 7.1 — suite
+
+`753 passed, 3 skipped, 0 failed` on the merged tree. The 3 skips exercise
+live provider paths and need explicit configuration.
+
+### 7.3 — batch proof, and what is substituted
+
+The proof drives the real `POST /api/problems/batch` endpoint and asserts:
+
+* the shelf goes out as **one** provider submission carrying all items;
+* every item is accepted only after the **same** `GenerationPipeline` and the
+  **same** `QualityGate` as an interactive generation;
+* each accepted package is on disk and reloads with `kind=problem_set`, a
+  concept pair, distribution code carrying `TODO`s, a stored checker
+  (`prefix = ["exists", "compiles"]`), and stored hints;
+* a malformed item is **rejected** with a finding — the batch path cannot
+  lower the bar.
+
+**Substitution, stated plainly:** the *model* is mocked. The live variant is
+blocked because the configured provider returns **HTTP 402 — "insufficient
+balance: available Rp 0"**. Everything else in the proof is the production
+path: the HTTP boundary, the shelf runner, the pipeline, the gate, the
+compiler, the runner, the comparator, the writer. Re-run the live variant once
+the provider has credit.
+
+### 7.4 — provider-free praxisability
+
+Started with `KENARI_API_KEY=` (empty) so the app runs with no AI at all
+(`/api/health` reports `key_configured: false`; the log says *"no
+KENARI_API_KEY configured; AI generation is disabled"*). The full learner loop
+then succeeds: **open → predict → edit → submit → check → hint → reveal**.
+
+Observed: verdict `passed` (7/7), a 9-check `check50`-style report ordered
+`exists → compiles → test-1..7`, **no test data in any check** (`data: {}`),
+a prediction diff that does not alter the verdict, a hint served from the
+*stored* ladder (`source: "stored"` — a stored hint always wins over a
+generated one), and a solution reveal that correctly **refuses** without
+`confirm: true`.
+
+### 7.5 — adversarial probe
+
+Attempted over the real HTTP boundary against a provider-free server, so the
+gate is provably deciding on its own:
+
+| Attack | Result | Finding |
+|---|---|---|
+| Starter replaced by the reference solution | rejected | `starter-identical-to-reference`, `starter-passes-all-tests` |
+| Concept pair above the declared frontier (`new_concept: recursion`, `assumed_known: [pointers, structs]`, neither declared known) | rejected | `concept-above-frontier` |
+| Control: the genuine pset | accepted | — |
+
+Neither rejected package was written to disk, and the probe removes the
+control package so it leaves the problems directory exactly as it found it.
+
+Note the schema layer rejects a malformed pair even earlier:
+`new_concept` appearing in `assumed_known` is a validation error, so it never
+reaches the gate.

@@ -233,6 +233,36 @@ localhost and opens **no new security exposure** — see
  hint ladder (1..4/5) / progressive reveal (5, explicit only)
 ```
 
+## Problem sets
+
+A **problem set** (`kind: "problem_set"`) is the full CS50-style unit. It is
+prepared in one go — statement, distribution code, reference solution, tagged
+test suite, checker, requirements and hints — and only then presented.
+
+- **Distribution code.** The package ships a starter scaffold with `TODO`
+  markers (and optionally a `hint/` variant beside it). The gate rejects a
+  starter that already passes its own tests — otherwise the learner would be
+  handed the answer.
+- **One new concept, combined with known ones.** The pset declares a concept
+  pair: `new_concept` must not be on the learner's checklist, and every
+  `assumed_known` concept must be. The check is deterministic and runs against
+  the checklist *you* declare — the platform never guesses.
+- **A checker, not just tests.** Every pset presents a `check50`-style report:
+  an ordered list of `exists` → `compiles` → per-test checks, each with a
+  pass/blocked state and a cause. A compile failure blocks the behavioural
+  checks rather than failing them, and a check never carries test data, so
+  hidden stdin and expected output cannot leak through the report.
+- **Predict, then verify.** Before submitting, the learner states what the
+  program will print. The submission diffs predicted vs expected vs actual
+  and may cite a *declared* misconception id. The prediction is never evidence:
+  the verdict, pass counts, and per-test results are identical with and
+  without it.
+- **Batch shelf preparation.** Because a whole pset is prepared up front,
+  psets can be generated in one provider run (`POST /api/problems/batch`).
+  Batching is a transport change only — every item goes through the same
+  pipeline and the same quality gate, so it can never lower the bar. A failed
+  item is recorded and the shelf still completes.
+
 ## HTTP API
 
 | Path | Method | Purpose |
@@ -243,6 +273,7 @@ localhost and opens **no new security exposure** — see
 | `/api/problems` | GET | list problem packages |
 | `/api/problems/{id}` | GET | learner-facing view (hidden test content is withheld) |
 | `/api/problems/generate` | POST | runs the AI pipeline + quality gate |
+| `/api/problems/batch` | POST | prepares a shelf of psets in one batch provider run (same pipeline, same gate) |
 | `/api/problems/import` | POST | import a package through the same gate |
 | `/api/problems/{id}/submit` | POST | deterministic grading |
 | `/api/problems/{id}/hint` | POST | next hint level |
@@ -326,9 +357,10 @@ require explicit configuration.
 ## Status
 
 - **Shipped**: generation with gated acceptance, deterministic grading,
-  concept ladder + legal pset pairing, hint ladder, import through the same
-  gate, MCP server, hermetic test suite, packaged wheel + `cpractice-mcp`
-  entry point.
+  concept ladder + legal pset pairing, check50-style checker reports,
+  distribution (starter) code, predict-then-verify diffs, batch shelf
+  preparation, hint ladder, import through the same gate, MCP server,
+  hermetic test suite, packaged wheel + `cpractice-mcp` entry point.
 - **Publishing runbook**: [`docs/PUBLISH.md`](docs/PUBLISH.md).
 - **Engine & milestones**: [`docs/PLAN.md`](docs/PLAN.md),
   [`docs/CS50_STYLE_ENGINE_PLAN.md`](docs/CS50_STYLE_ENGINE_PLAN.md).
