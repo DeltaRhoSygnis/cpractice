@@ -1,4 +1,4 @@
-# deterministic-autograder
+# C practice deterministic-autograder
 
 A specification you can hand to an agent when you are building a code grader:
 verdict categories and partial credit, test discrimination through mutation,

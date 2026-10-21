@@ -1,5 +1,9 @@
 # CPractice
 
+<p align="center">
+  <img src="docs/images/cpractice-logo.png" alt="CPractice — Learn · Practice · Build" width="320">
+</p>
+
 ![CI](https://github.com/DeltaRhoSygnis/cpractice/actions/workflows/tests.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)

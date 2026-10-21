@@ -152,10 +152,9 @@ body {
   display: inline-flex; align-items: center; gap: var(--sp-2);
   color: var(--text); text-decoration: none; font-weight: 650; letter-spacing: -.01em;
 }
-.brand__mark {
-  font-family: var(--mono); color: var(--accent-text);
-  background: var(--code-bg); border: 1px solid var(--border);
-  border-radius: var(--r-1); padding: 1px 6px; font-size: .82rem; font-weight: 600;
+.brand__logo {
+  display: block; width: 28px; height: 28px;
+  border-radius: var(--r-1);
 }
 .nav { display: flex; gap: var(--sp-1); margin-left: auto; flex-wrap: wrap; }
 .nav a {

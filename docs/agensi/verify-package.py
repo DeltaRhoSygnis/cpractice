@@ -15,8 +15,12 @@ import zipfile
 from pathlib import Path
 
 #: Anything that must not appear inside a published package.
+#:
+#: The product name is allowed - the package *is* the product. What must not
+#: appear is the internal plumbing it was distilled from: repository paths,
+#: repository URLs, provider names, and machine-specific paths.
 FORBIDDEN_TEXT = re.compile(
-    r"cpractice|app/|kenari|gemini|google_api|bryllim|/data/data|ignore previous",
+    r"DeltaRhoSygnis|github\.com/|/data/data|bryllim|kenari|gemini|google_api|app/|ignore previous",
     re.IGNORECASE,
 )
 
@@ -24,7 +28,7 @@ FORBIDDEN_TEXT = re.compile(
 TEXT_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml", ".csv", ".sh", ".py"}
 
 #: The one listing this repository publishes.
-SKILL_NAME = "deterministic-autograder"
+SKILL_NAME = "cpractice"
 
 
 def main() -> int:

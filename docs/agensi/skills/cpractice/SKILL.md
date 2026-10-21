@@ -1,5 +1,5 @@
 ---
-name: deterministic-autograder
+name: cpractice
 description: Use when the user asks to design an autograder, grade programming assignments, define per-test verdicts and partial credit, write hidden test cases, prove their tests are not vacuous, or structure a problem package for an automated judge. Also use when the user asks why a student's submission was graded wrong, or wants a hint ladder for a struggling learner.
 ---
 

@@ -28,8 +28,8 @@ if [ ${#targets[@]} -eq 0 ]; then
   targets=()
   # Only the published listing is built by default. The other folders are
   # drafts kept for reference and must never reach the marketplace.
-  if [ -f "$SKILLS_DIR/deterministic-autograder/SKILL.md" ]; then
-    targets+=("deterministic-autograder")
+  if [ -f "$SKILLS_DIR/cpractice/SKILL.md" ]; then
+    targets+=("cpractice")
   fi
 fi
 if [ ${#targets[@]} -eq 0 ]; then
