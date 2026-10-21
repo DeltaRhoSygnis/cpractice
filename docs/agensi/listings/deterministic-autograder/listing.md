@@ -191,9 +191,9 @@ reaches the network. It has no bundled scripts.
 ## FAQ
 
 **Does this run my students' code?**
-No. It specifies the sandbox — time limit, memory limit, output cap, cleanup —
-as configuration your grader enforces, and it never emits a command that
-compiles or executes a submission.
+No. It specifies the sandbox (time limit, memory limit, output cap, cleanup) as
+configuration your grader enforces, and it never emits a command that compiles
+or executes a submission.
 
 **Is the AI allowed to grade?**
 No. That is the point of the skill. The invariant is that no model, heuristic

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build submission-ready zips for the Agensi marketplace.
 #
-# Rules enforced by Agensi (see docs/agensi/FEASIBILITY.md):
+# Rules enforced by Agensi:
 #   - exactly one top-level folder in the archive, named after the skill
 #   - SKILL.md at the root of that folder
 #   - text files only: no binaries, no symlinks

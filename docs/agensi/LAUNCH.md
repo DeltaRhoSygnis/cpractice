@@ -15,9 +15,9 @@ publish; both are conversion levers to add later, not blockers.
 
 Mechanical checks (run these, they cover everything a reviewer would catch):
 
-- [ ] `python3 docs/agensi/verify-package.py docs/agensi/dist/deterministic-autograder.zip` → `OK: ...`
-- [ ] `head -5 docs/agensi/skills/deterministic-autograder/SKILL.md` → `name: deterministic-autograder`
-- [ ] `python3 -c "from PIL import Image; print(Image.open('docs/agensi/logos/deterministic-autograder.png').size)"` → `(512, 512)`
+- [ ] `python3 docs/agensi/verify-package.py docs/agensi/dist/cpractice.zip` → `OK: ...`
+- [ ] `head -5 docs/agensi/skills/cpractice/SKILL.md` → `name: cpractice`
+- [ ] `python3 -c "from PIL import Image; print(Image.open('docs/agensi/logos/cpractice.png').size)"` → `(512, 512)`
 - [ ] `python3 -c "import re;t=open('docs/agensi/listings/deterministic-autograder/listing.md').read();d=t.split('## The result',1)[1].split('## Compatibility note',1)[0];print(len(d), re.findall(r'\.\.\.|truncated', d))"` → a number above 700 and `[]`
 
 Judgement checks:
@@ -35,8 +35,8 @@ Judgement checks:
 
 | Step | Field | Source |
 |---|---|---|
-| 1 | Skill ZIP | `docs/agensi/dist/deterministic-autograder.zip` |
-| 2 | Skill logo | `docs/agensi/logos/deterministic-autograder.png` |
+| 1 | Skill ZIP | `docs/agensi/dist/cpractice.zip` |
+| 2 | Skill logo | `docs/agensi/logos/cpractice.png` |
 | 2 | Skill Name | `Deterministic Autograder — Verdict Model and Test Strength` (58 chars) |
 | 2 | Summary | the one-liner under `## Summary` |
 | 2 | Full Description | everything under `## Full Description` |

@@ -168,8 +168,8 @@ Point the MCP server at the same stdio entry point:
 | Continue.dev | `~/.continue/config.yaml` → `mcpServers` entry, command-mode |
 | Zed | `settings.json` → `context_servers` entry |
 
-No MCP support? Everything above is plain HTTP — a free-model agent with a
-shell and `curl` can drive the whole loop: `POST /api/problems/{id}/submit`
+No MCP support in your agent? Everything above is plain HTTP — a free-model
+agent with a shell and `curl` can drive the whole loop: `POST /api/problems/{id}/submit`
 returns the verdict, `POST /{id}/hint` walks the ladder, `GET /api/attempts`,
 `GET /api/recommendations`.
 
@@ -256,7 +256,7 @@ test suite, checker, requirements and hints — and only then presented.
   pair: `new_concept` must not be on the learner's checklist, and every
   `assumed_known` concept must be. The check is deterministic and runs against
   the checklist *you* declare — the platform never guesses.
-- **A checker, not just tests.** Every pset presents a `check50`-style report:
+- **A checker, not a raw test list.** Every pset presents a `check50`-style report:
   an ordered list of `exists` → `compiles` → per-test checks, each with a
   pass/blocked state and a cause. A compile failure blocks the behavioural
   checks rather than failing them, and a check never carries test data, so

@@ -49,3 +49,9 @@ Thumbs.db
 
 # --- Private agent toolkit (kept local, stop shipping to the public repo) ---
 .opencode/
+
+# --- Local working files (never part of the public repo) ---
+_archive/
+agensi.txt
+notes.txt
+skill_upload.txt
