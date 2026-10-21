@@ -56,11 +56,16 @@ Deterministic both in grading and deck fitting means a free-tier agent suffices;
 git clone https://github.com/DeltaRhoSygnis/cpractice.git
 cd cpractice
 pip install -r requirements.txt
-cp .env.example .env      # add an AI provider key — see Configuration
-./start.sh                # http://127.0.0.1:8000
+./start.sh                # http://127.0.0.1:8000 - no API key needed
 ```
 
 or without the helper: `uvicorn app.main:app --host 127.0.0.1 --port 8000`.
+
+> **No API key required.** CPractice boots, serves the saved problem packages
+> and grades submissions with **no AI provider configured**. An AI key is only
+> needed to *generate* new exercises and to draft hints on the fly
+> (`cp .env.example .env` to add one). Everything that decides a verdict is
+> deterministic software.
 
 > **Termux caveat:** compiled binaries cannot execute on shared Android
 > storage (`noexec` mount). Keep the repo under the Termux home directory.

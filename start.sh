@@ -46,6 +46,28 @@ fi
 
 echo "Starting CPractice at ${URL} ..."
 
+# Report offline mode honestly: no key means no generation, but grading works.
+# The application owns the provider registry, so ask it which credential is
+# usable instead of listing credential names here.
+ai_status="$(python3 - <<'PY' 2>/dev/null
+import sys
+
+sys.path.insert(0, ".")
+try:
+    from app.config import Settings
+except Exception:
+    print("unknown")
+    raise SystemExit(0)
+
+print("configured" if Settings().any_ai_key_configured else "offline")
+PY
+)"
+
+if [ "$ai_status" = "offline" ]; then
+  echo "No AI provider key found - AI generation and live hints are disabled."
+  echo "Saved problem packages still load and every submission is still graded."
+fi
+
 if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
   print_lan_hints
 fi
