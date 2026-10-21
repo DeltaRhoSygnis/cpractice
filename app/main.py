@@ -52,27 +52,36 @@ def _build_generation_pipeline(settings: Settings, ledger: UsageLedger) -> Gener
 
     The application must start without AI credentials: offline practice with
     saved exercises is a first-class use case (design decision #4).
+
+    Which provider is used is decided by the settings, not here: the selected
+    provider wins when its credential is present, otherwise any provider that
+    holds a credential is used.
     """
+    provider_name = settings.resolved_ai_provider
+    if provider_name is None:
+        logger.warning("no AI provider credential configured; AI generation is disabled")
+        return None
+
     provider = None
 
-    if settings.ai_provider == "kenari":
+    if provider_name == "kenari":
         try:
             provider = KenariProvider(
                 settings.kenari_api_key,
-                model=settings.ai_model,
+                model=settings.resolved_ai_model,
                 base_url=settings.kenari_base_url,
             )
         except AuthError:
             logger.warning("no KENARI_API_KEY configured; AI generation is disabled")
             return None
-    elif settings.ai_provider == "google":
+    elif provider_name == "google":
         try:
-            provider = GoogleProvider(settings.google_api_key, model=settings.ai_model)
+            provider = GoogleProvider(settings.google_api_key, model=settings.resolved_ai_model)
         except AuthError:
             logger.warning("no GOOGLE_API_KEY configured; AI generation is disabled")
             return None
     else:
-        logger.warning("unknown AI provider %r; generation disabled", settings.ai_provider)
+        logger.warning("unknown AI provider %r; generation disabled", provider_name)
         return None
 
     # Wrap so every call is recorded and the daily budget is enforced.
@@ -99,10 +108,10 @@ def _build_batch_provider(settings: Settings):
     requires a Google key; when none is configured, shelf preparation is simply
     disabled and single-request generation is unaffected.
     """
-    if settings.ai_provider != "google":
+    if settings.resolved_ai_provider != "google":
         logger.info(
             "batch preparation disabled (provider=%s); Gemini Batch API only",
-            settings.ai_provider,
+            settings.resolved_ai_provider or "none",
         )
         return None
     try:

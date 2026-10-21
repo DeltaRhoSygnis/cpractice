@@ -33,12 +33,8 @@ def _compiler_available(compiler: str) -> bool:
 
 
 def _ai_key_configured(settings) -> bool:
-    """Return whether the key for the configured provider is present."""
-    if settings.ai_provider == "kenari":
-        return bool(settings.kenari_api_key)
-    if settings.ai_provider == "google":
-        return bool(settings.google_api_key)
-    return False
+    """Return whether the key for the *selected* provider is present."""
+    return bool(settings.ai_key_for(settings.ai_provider))
 
 
 @router.get("/health")
@@ -57,9 +53,14 @@ def health(request: Request) -> dict[str, Any]:
             },
             "ai": {
                 "provider": settings.ai_provider,
+                # The provider that will actually be used, and its model.
+                "active_provider": settings.resolved_ai_provider,
+                "active_model": settings.resolved_ai_model,
                 "model": settings.ai_model,
                 # Presence only - never the value.
                 "key_configured": _ai_key_configured(settings),
+                # True when any provider credential is present, whoever holds it.
+                "any_key_configured": settings.any_ai_key_configured,
             },
             "storage": {
                 "problems_dir": settings.problems_path.is_dir(),

@@ -141,11 +141,16 @@ def test_usage_starts_empty(tmp_path: Path) -> None:
     assert body["budget"]["remaining"] is None
 
 
-def test_usage_reports_configured_provider(tmp_path: Path) -> None:
+def test_usage_reports_the_active_provider(tmp_path: Path) -> None:
+    """The reported provider is the one actually in use, not the selection.
+
+    With no credential the application is offline and there is no provider to
+    report; the usage endpoint says so instead of naming one.
+    """
     with _client(tmp_path) as client:
         body = client.get("/api/usage").json()
 
-    assert body["provider"] == "kenari"
+    assert body["provider"] == "none"
     assert body["model"]
 
 

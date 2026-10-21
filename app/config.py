@@ -6,6 +6,7 @@ All settings are loaded from environment variables (optionally via a local
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -14,6 +15,34 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repository root: this file lives at <root>/app/config.py
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+
+@dataclass(frozen=True)
+class ProviderSpec:
+    """One AI provider adapter: the credential it needs and its default model.
+
+    Providers are declared here and nowhere else. Adding a new adapter is a
+    single new entry - the rest of the application asks these settings which
+    provider is usable instead of hard-coding provider names.
+    """
+
+    #: The value used for ``AI_PROVIDER``.
+    name: str
+    #: The ``Settings`` field holding the credential for this provider.
+    key_field: str
+    #: The model used when the operator did not choose one explicitly.
+    default_model: str
+
+
+#: Every provider the application can talk to.
+#:
+#: A provider is usable when its credential is present. The selected provider
+#: wins; otherwise any provider with a credential is used, so a machine holding
+#: only one kind of key still gets a working generation pipeline.
+AI_PROVIDERS: dict[str, ProviderSpec] = {
+    "kenari": ProviderSpec("kenari", "kenari_api_key", "deepseek-v4-1-flash"),
+    "google": ProviderSpec("google", "google_api_key", "gemini-2.0-flash"),
+}
 
 
 class Settings(BaseSettings):
@@ -82,6 +111,58 @@ class Settings(BaseSettings):
     @property
     def web_dir(self) -> Path:
         return ROOT_DIR / "web"
+
+    # --- AI provider resolution -------------------------------------------
+    def ai_key_for(self, provider: str) -> str | None:
+        """Return the credential configured for ``provider``, if any.
+
+        Unknown providers have no credential field and therefore no key.
+        """
+        spec = AI_PROVIDERS.get(provider)
+        if spec is None:
+            return None
+        value = getattr(self, spec.key_field, None)
+        return value or None
+
+    @property
+    def any_ai_key_configured(self) -> bool:
+        """True when at least one provider credential is present.
+
+        The check is credential-agnostic: it asks every declared provider
+        instead of naming a fixed pair, so a newly added adapter is covered
+        the moment it is registered.
+        """
+        return any(self.ai_key_for(spec.name) for spec in AI_PROVIDERS.values())
+
+    @property
+    def resolved_ai_provider(self) -> str | None:
+        """The provider that will actually be used, or ``None`` offline.
+
+        The selected provider wins when its credential is present. Otherwise
+        any provider holding a credential is used, so a machine that has only
+        one kind of key is not silently left without generation.
+        """
+        if self.ai_key_for(self.ai_provider):
+            return self.ai_provider
+        for spec in AI_PROVIDERS.values():
+            if self.ai_key_for(spec.name):
+                return spec.name
+        return None
+
+    @property
+    def resolved_ai_model(self) -> str:
+        """The model the resolved provider will be asked to use.
+
+        An explicitly configured ``AI_MODEL`` always wins. Otherwise the
+        resolved provider's own default is used, so the default model never
+        belongs to a different provider than the credential.
+        """
+        if "ai_model" in self.model_fields_set:
+            return self.ai_model
+        provider = self.resolved_ai_provider
+        if provider is None:
+            return self.ai_model
+        return AI_PROVIDERS[provider].default_model
 
 
 @lru_cache(maxsize=1)

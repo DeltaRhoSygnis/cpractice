@@ -168,8 +168,8 @@ def usage(request: Request) -> dict:
     remaining = None if budget <= 0 else max(0, budget - today.requests)
 
     return {
-        "provider": settings.ai_provider,
-        "model": settings.ai_model,
+        "provider": settings.resolved_ai_provider or "none",
+        "model": settings.resolved_ai_model,
         "today": {
             "requests": today.requests,
             "failures": today.failures,
