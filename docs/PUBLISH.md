@@ -84,6 +84,31 @@ master`.
   166827052) added for this flow — **revoke it after the release**:
   `gh api -X DELETE /user/keys/166827052`.
 
+### Publication log (2026-10-21)
+
+- **PR #1 merged** into `master` (`99259cb`, "Merge pull request #1 from
+  DeltaRhoSygnis/feat/pset-engine"). The merge tree is byte-identical to the
+  branch head `ca65647` — no conflict resolution, no manual edits.
+- The merge was deliberately **not gated on CI**. Verified before merging:
+  `master` has **no branch protection** and **no rulesets**, so the never-started
+  (billing-locked) jobs were not a merge gate. The billing lock was re-tested
+  on 2026-10-21 and is still active: jobs fail in ~2s with
+  `steps: []` and the annotation *"The job was not started because your account
+  is locked due to a billing issue."*
+- **The `v0.1.0` tag and GitHub Release are deliberately HELD** until CI is
+  green on the canonical toolchain (ubuntu-latest + gcc + Python 3.12/3.14).
+  The merge is not the published artifact; the release is. The local
+  environment is Termux/Android + clang 21 + Python 3.14, so it cannot stand
+  in for the CI matrix.
+- Temporary SSH deploy key `cpractice-termux-publish-onetime` (id 166827052)
+  **revoked** (verified: `gh api /user/keys/166827052` → 404). Remaining keys
+  (`nebuluxai`, `cs50`) are pre-existing and unrelated. Consequence: pushes
+  touching `.github/workflows/*.yml` now need `gh auth refresh -s workflow`
+  (the HTTPS token has `repo` but not `workflow`); ordinary code pushes are
+  unaffected.
+- Local verification of the merged tree: **753 passed, 3 skipped, 0 failed**
+  (3 skips are the expected live-provider skips).
+
 ## 3. Pre-publish verification (run again on the branch that will be merged)
 
 ```bash
