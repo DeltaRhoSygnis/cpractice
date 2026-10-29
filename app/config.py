@@ -6,6 +6,7 @@ All settings are loaded from environment variables (optionally via a local
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -15,6 +16,39 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repository root: this file lives at <root>/app/config.py
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+#: Directory created for installed users when no source checkout is detected.
+DEFAULT_HOME_NAME = ".cpractice"
+
+#: Credential values shipped as examples. They are not real keys and must
+#: never make the application believe an AI provider is configured.
+PLACEHOLDER_KEY_VALUES = frozenset(
+    {"your-kenari-key-here", "your-google-key-here", "change-me"}
+)
+
+
+def is_source_checkout(root: Path = ROOT_DIR) -> bool:
+    """True when ``root`` looks like a CPractice source checkout.
+
+    A source checkout keeps its runtime state beside the code, which preserves
+    existing developer workflows. Installed packages do not ship the project
+    metadata and fall back to a single writable home directory instead.
+    """
+    return (root / "pyproject.toml").is_file() and (root / "app" / "web").is_dir()
+
+
+def resolve_home() -> Path:
+    """Return the one directory CPractice may write to.
+
+    Priority: the ``CPRACTICE_HOME`` override, then the source checkout root,
+    then ``~/.cpractice`` for installed users.
+    """
+    override = os.environ.get("CPRACTICE_HOME")
+    if override:
+        return Path(override).expanduser()
+    if is_source_checkout():
+        return ROOT_DIR
+    return Path.home() / DEFAULT_HOME_NAME
 
 
 @dataclass(frozen=True)
@@ -49,7 +83,7 @@ class Settings(BaseSettings):
     """Runtime configuration for CPractice."""
 
     model_config = SettingsConfigDict(
-        env_file=ROOT_DIR / ".env",
+        env_file=resolve_home() / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -88,25 +122,36 @@ class Settings(BaseSettings):
     run_max_output_bytes: int = 65536
 
     # --- Storage ---
+    # Optional override for the writable home. ``resolve_home()`` supplies the
+    # default when this is unset.
+    cpractice_home: Path | None = None
+
     database_path: Path = Field(default=Path("data/cpractice.db"))
     problems_dir: Path = Field(default=Path("problems"))
     workspaces_dir: Path = Field(default=Path("workspaces"))
 
     # --- Derived paths (absolute) ---
     @property
+    def home(self) -> Path:
+        """The writable home directory for this installation."""
+        if self.cpractice_home:
+            return Path(self.cpractice_home).expanduser()
+        return resolve_home()
+
+    @property
     def database_file(self) -> Path:
         path = Path(self.database_path)
-        return path if path.is_absolute() else ROOT_DIR / path
+        return path if path.is_absolute() else self.home / path
 
     @property
     def problems_path(self) -> Path:
         path = Path(self.problems_dir)
-        return path if path.is_absolute() else ROOT_DIR / path
+        return path if path.is_absolute() else self.home / path
 
     @property
     def workspaces_path(self) -> Path:
         path = Path(self.workspaces_dir)
-        return path if path.is_absolute() else ROOT_DIR / path
+        return path if path.is_absolute() else self.home / path
 
     @property
     def web_dir(self) -> Path:
@@ -121,8 +166,14 @@ class Settings(BaseSettings):
         spec = AI_PROVIDERS.get(provider)
         if spec is None:
             return None
-        value = getattr(self, spec.key_field, None)
-        return value or None
+        value = (getattr(self, spec.key_field, None) or "").strip()
+        if (
+            not value
+            or value.lower() in PLACEHOLDER_KEY_VALUES
+            or value.lower().startswith("your-")
+        ):
+            return None
+        return value
 
     @property
     def any_ai_key_configured(self) -> bool:

@@ -67,3 +67,9 @@ def test_default_provider_is_kenari() -> None:
     assert settings.ai_provider == "kenari"
     assert settings.ai_model == "deepseek-v4-1-flash"
     assert settings.kenari_base_url == "https://kenari.id/v1"
+
+
+def test_placeholder_key_is_not_a_configured_key() -> None:
+    settings = Settings(_env_file=None, kenari_api_key="your-kenari-key-here")
+    assert settings.any_ai_key_configured is False
+    assert settings.resolved_ai_provider is None

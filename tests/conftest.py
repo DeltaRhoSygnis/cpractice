@@ -27,6 +27,7 @@ _CREDENTIAL_VARS = (
     "AI_PROVIDER",
     "AI_MODEL",
     "KENARI_BASE_URL",
+    "CPRACTICE_HOME",
 )
 
 
