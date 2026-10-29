@@ -41,13 +41,20 @@ def test_health_reports_capabilities_without_secret_values(client: TestClient) -
     body = client.get("/api/health").json()
     capabilities = body["capabilities"]
 
-    assert set(capabilities) == {"compiler", "ai", "storage"}
+    assert set(capabilities) == {"compiler", "ai", "storage", "grading"}
     assert capabilities["ai"]["provider"] == "kenari"
 
     # A boolean presence flag is reported; the key value itself never is.
     assert capabilities["ai"]["key_configured"] is False
     # Neither the config field name nor any raw key string is echoed back.
     assert "google_api_key" not in response_keys(body)
+
+
+def test_health_reports_grading_probe_and_home(client) -> None:
+    body = client.get("/api/health").json()
+    assert "grading" in body["capabilities"]
+    assert body["capabilities"]["grading"]["ready"] in (True, False)
+    assert body["home"] == str(client.app.state.settings.home)
 
 
 def test_health_reports_key_configured_when_present(tmp_path: Path) -> None:

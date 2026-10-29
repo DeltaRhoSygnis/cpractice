@@ -13,6 +13,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from app.grading.probe import probe_grading
+
 router = APIRouter(tags=["health"])
 
 
@@ -41,15 +43,26 @@ def _ai_key_configured(settings) -> bool:
 def health(request: Request) -> dict[str, Any]:
     """Report application liveness and configured capabilities."""
     settings = request.app.state.settings
+    probe = probe_grading(compiler=settings.cc_compiler, standard=settings.cc_standard)
 
     return {
         "status": "ok",
         "app": settings.app_name,
         "version": settings.app_version,
+        # The one writable directory this installation uses.
+        "home": str(settings.home),
         "capabilities": {
             "compiler": {
                 "configured": settings.cc_compiler,
+                # Availability alone is not readiness: a compiler can exist
+                # while produced binaries cannot execute. Kept for
+                # compatibility; ``grading`` carries the truthful answer.
                 "available": _compiler_available(settings.cc_compiler),
+            },
+            "grading": {
+                "ready": probe.ready,
+                "compiler": probe.compiler,
+                "detail": probe.detail,
             },
             "ai": {
                 "provider": settings.ai_provider,
