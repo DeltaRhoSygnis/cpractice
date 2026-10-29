@@ -24,6 +24,7 @@ from app.api import generation, health, preferences, problems, progress, submiss
 from app.config import Settings, get_settings
 from app.feedback.hint_service import HintService
 from app.generation.pipeline import GenerationPipeline
+from app.runtime import ensure_runtime_directories
 from app.services.adaptive_service import AdaptivePlanner
 from app.services.problem_service import ProblemService
 from app.services.sequencer import PracticeSequencer
@@ -38,13 +39,6 @@ from app.storage.usage_ledger import (
 )
 
 logger = logging.getLogger("cpractice")
-
-
-def _ensure_directories(settings: Settings) -> None:
-    """Create the runtime directories the application expects."""
-    settings.problems_path.mkdir(parents=True, exist_ok=True)
-    settings.workspaces_path.mkdir(parents=True, exist_ok=True)
-    settings.database_file.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _build_generation_pipeline(settings: Settings, ledger: UsageLedger) -> GenerationPipeline | None:
@@ -125,7 +119,7 @@ def _build_batch_provider(settings: Settings):
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application startup/shutdown hooks."""
     settings: Settings = app.state.settings
-    _ensure_directories(settings)
+    ensure_runtime_directories(settings)
 
     database = Database(settings.database_file)
     app.state.database = database

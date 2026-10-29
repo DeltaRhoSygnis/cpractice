@@ -108,16 +108,22 @@ def test_path_traversal_attempt_returns_404(tmp_path: Path) -> None:
     assert response.status_code in (404, 422)
 
 
-def test_empty_problems_dir_returns_empty_list(tmp_path: Path) -> None:
+def test_empty_problems_dir_is_seeded_on_startup(tmp_path: Path) -> None:
+    """A first start populates an empty problems dir from the packaged examples."""
     settings = Settings(
         database_path=tmp_path / "data" / "cpractice.db",
         problems_dir=tmp_path / "empty-problems",
         workspaces_dir=tmp_path / "workspaces",
+        cpractice_home=tmp_path / "home",
     )
     with TestClient(create_app(settings)) as client:
         body = client.get("/api/problems").json()
 
-    assert body == {"count": 0, "problems": []}
+    assert body["count"] == 2
+    assert {problem["id"] for problem in body["problems"]} == {
+        "c-sum-two-integers",
+        "pset-vote-tally",
+    }
 
 
 def test_pedagogy_is_exposed_but_the_outline_is_withheld(tmp_path: Path) -> None:
