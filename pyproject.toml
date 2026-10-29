@@ -51,6 +51,7 @@ Issues = "https://github.com/DeltaRhoSygnis/cpractice/issues"
 Security = "https://github.com/DeltaRhoSygnis/cpractice/blob/master/SECURITY.md"
 
 [project.scripts]
+cpractice = "app.cli:main"
 cpractice-mcp = "app.mcp.server:main"
 
 [tool.setuptools]
