@@ -9,6 +9,7 @@ when the optional ``mcp`` SDK is not installed).
 from __future__ import annotations
 
 import asyncio
+import types
 from typing import Any
 
 import httpx
@@ -112,3 +113,31 @@ def test_reveal_tool_is_advertised_with_confirm_gate() -> None:
     reveal = next(t for t in tools if t.name == "reveal_solution")
     assert "confirm" in (reveal.description or "")
     assert "explicitly" in (reveal.description or "")
+
+
+def test_main_explains_missing_mcp_sdk(monkeypatch, capsys) -> None:
+    def boom(base_url=None):
+        raise ImportError("No module named 'mcp'")
+
+    monkeypatch.setattr(mcp_server, "build_server", boom)
+    assert mcp_server.main([]) == 1
+    assert "cpractice[mcp]" in capsys.readouterr().out
+
+
+def test_main_runs_server_and_returns_zero(monkeypatch) -> None:
+    class _FakeServer:
+        def __init__(self) -> None:
+            self.settings = types.SimpleNamespace(host=None, port=None)
+            self.transports: list[str] = []
+
+        def run(self, transport: str) -> None:
+            self.transports.append(transport)
+
+    fake = _FakeServer()
+    monkeypatch.setattr(mcp_server, "build_server", lambda base_url=None: fake)
+
+    code = mcp_server.main(["--transport", "streamable-http", "--port", "8123"])
+
+    assert code == 0
+    assert fake.transports == ["streamable-http"]
+    assert fake.settings.port == 8123

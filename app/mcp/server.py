@@ -503,7 +503,12 @@ def _default_base_url() -> str:
     return f"http://{DEFAULT_BASE_URL}"
 
 
-def main(argv: list[str] | None = None) -> None:
+_MCP_INSTALL_SPEC = (
+    "cpractice[mcp] @ git+https://github.com/DeltaRhoSygnis/cpractice.git"
+)
+
+
+def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -524,13 +529,25 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    mcp = build_server(args.base_url)
+    try:
+        mcp = build_server(args.base_url)
+    except ImportError:
+        # The SDK is an optional extra; a traceback here reads as a broken
+        # install, so name the one command that fixes it and exit non-zero.
+        print(
+            "cpractice-mcp: the optional MCP SDK is not installed.\n"
+            f'Install it with: pipx install "{_MCP_INSTALL_SPEC}"\n'
+            f'   (or: uv tool install "{_MCP_INSTALL_SPEC}")'
+        )
+        return 1
+
     # Keep the untranslated settings consistent with the CLI flags.
     mcp.settings.host = args.host
     mcp.settings.port = args.port
 
     mcp.run(transport=args.transport)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
