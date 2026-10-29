@@ -32,10 +32,18 @@ _CREDENTIAL_VARS = (
 
 
 @pytest.fixture(autouse=True)
-def _isolate_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Remove provider credentials and force config to ignore any .env file."""
     for name in _CREDENTIAL_VARS:
         monkeypatch.delenv(name, raising=False)
+
+    # Every test gets its own writable home. Application startup writes
+    # ``env.example`` (and, through the CLI, ``state.json``) into the home, so
+    # leaving it unset would drop runtime files into the checkout. A test that
+    # exercises home resolution sets or deletes this itself.
+    monkeypatch.setenv("CPRACTICE_HOME", str(tmp_path / "home"))
 
     # Point Settings at a non-existent .env so a developer's file is ignored.
     monkeypatch.setattr("app.config.Settings.model_config", {

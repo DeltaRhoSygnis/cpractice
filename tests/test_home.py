@@ -50,3 +50,9 @@ def test_empty_override_is_treated_as_unset(monkeypatch, tmp_path) -> None:
 def test_test_settings_keep_the_home_inside_tmp_path(tmp_path) -> None:
     """The suite must never write runtime files into the checkout."""
     assert make_settings(tmp_path).home == tmp_path
+
+
+def test_suite_never_resolves_home_to_the_checkout() -> None:
+    """The autouse fixture must keep runtime files out of the repository."""
+    checkout = Path(__file__).resolve().parent.parent
+    assert Settings(_env_file=None).home != checkout

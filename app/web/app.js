@@ -352,7 +352,7 @@ views.dashboard = async () => {
   // explicit door instead of opening the product with a form.
   container.append(
     el("details", { class: "advanced" }, [
-      el("summary", { text: "Advanced: generate or import a problem" }),
+      el("summary", { text: "Advanced: generate a problem" }),
       actionCard,
     ]),
   );

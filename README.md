@@ -94,7 +94,7 @@ dashboards, or multi-user permissions; one person practises on one machine.
 ## Managing your practice
 
 **The three pages.** The **Dashboard** shows your recent work, the problem shelf,
-a status strip, and a collapsed **Advanced** section for generation and import.
+a status strip, and a collapsed **Advanced** section for generating a new problem.
 **Problems** is the shelf you can browse and open. **Progress** shows attempts,
 trends, and next-practice recommendations.
 

@@ -177,9 +177,10 @@ each with the generation fields plus an optional `custom_id`, and an optional
 shelf: batching changes transport only, and every item still passes the same
 pipeline and gate.
 
-In the browser, generation and import live inside the collapsed **Advanced**
-disclosure on the Dashboard. The generation form and import are the same
-features, not a reduced copy.
+In the browser, generation lives inside the collapsed **Advanced** disclosure
+on the Dashboard. Import is available through `POST /api/problems/import` and
+the MCP `import_problem` tool; it has no browser form, so the Advanced
+disclosure does not pretend to offer one.
 
 ## Provider configuration
 
