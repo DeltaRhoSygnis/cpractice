@@ -12,9 +12,9 @@
 ![C](https://img.shields.io/badge/language-C11-grey.svg)
 
 CPractice is a local-first practice app for C. It serves a small problem shelf,
-compiles and runs what you write against declared tests, and gives you the same
-verdict every time. AI can generate new exercises and help when you are stuck,
-but it never decides whether your program is correct.
+compiles and runs what you write against declared tests, and gives the same
+verdict every time. AI can generate exercises and help when you are stuck, but
+it never decides whether your program is correct.
 
 ## What it is
 
@@ -28,8 +28,15 @@ but it never decides whether your program is correct.
 - Your practice history stays on this machine: no account, no cloud sync, no
   telemetry.
 
-The browser is the interface. There is no build step and no frontend framework;
-the interface is plain HTML, CSS, and JavaScript served from your own machine.
+The browser is the interface: plain HTML, CSS, and JavaScript, no build step and
+no frontend framework, served from your own machine.
+
+## A look at it
+
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="Dashboard with the grading status strip, recommended problems, and the problem shelf" width="640">
+  <img src="docs/images/problem-workspace.png" alt="A problem workspace showing the statement and its input/output examples" width="640">
+</p>
 
 ## Install
 
@@ -63,14 +70,13 @@ when you pass `--yes`. It never pipes remote code into a shell.
 5. Stuck? Ask for a hint. Levels unlock one at a time, and stored hints work
    even with no AI provider configured.
 
-That is the whole loop: start, pick, write, submit, hint. It takes about a minute
-the first time, and `Ctrl+C` stops the server cleanly.
+That is the whole loop: start, pick, write, submit, hint. The first pass takes
+about a minute, and `Ctrl+C` stops the server cleanly.
 
 ## Who it is for
 
-- **Learners** working through C for the first time, alone at their own pace.
-- **Self-taught developers** who want compiler-accurate practice rather than
-  multiple-choice quizzes.
+- **Learners** working through C for the first time, alone and at their own pace.
+- **Self-taught developers** who want compiler-accurate practice, not quizzes.
 - **Individual teachers** preparing exercises for their own use.
 
 CPractice is not a classroom product. There are no accounts, rosters, class
@@ -93,10 +99,10 @@ dashboards, or multi-user permissions; one person practises on one machine.
 
 ## Managing your practice
 
-**The three pages.** The **Dashboard** shows your recent work, the problem shelf,
-a status strip, and a collapsed **Advanced** section for generating a new problem.
-**Problems** is the shelf you can browse and open. **Progress** shows attempts,
-trends, and next-practice recommendations.
+**The three pages.** **Dashboard** shows recent work, the shelf, a status strip,
+and a collapsed **Advanced** section for generating a problem. **Problems** is the
+shelf you browse and open. **Progress** shows attempts, trends, and next-practice
+recommendations.
 
 **`cpractice doctor`.** Run it whenever something looks wrong. It checks the
 Python version, writes to the data folder, performs a real compile-and-run of a
@@ -112,9 +118,8 @@ repository root. The folder holds `problems/` (your shelf), `workspaces/`
 fully commented out; copy it to `.env` in the same folder if you add AI
 settings. Existing problems are never overwritten by a CPractice upgrade.
 
-Other useful commands: `cpractice problems` lists the local shelf, `cpractice
-open` reopens a running instance, and `cpractice version` shows the version and
-data folder.
+Other commands: `cpractice problems` lists the shelf, `cpractice open` reopens a
+running instance, and `cpractice version` shows the version and data folder.
 
 ## AI is optional
 
