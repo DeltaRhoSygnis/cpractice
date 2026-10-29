@@ -22,3 +22,8 @@ jobs:
           pip install -r requirements.txt
       - name: Run test suite
         run: python -m pytest -q
+      - name: Verify wheel contents
+        if: matrix.python-version == '3.12'
+        env:
+          CPRACTICE_BUILD_WHEEL: "1"
+        run: python -m pytest tests/test_packaging.py -q
