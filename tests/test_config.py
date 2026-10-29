@@ -34,7 +34,10 @@ def test_default_limits_are_sane() -> None:
     assert settings.run_max_output_bytes > 0
 
 
-def test_relative_paths_resolve_under_repo_root() -> None:
+def test_relative_paths_resolve_under_repo_root(monkeypatch) -> None:
+    # The suite pins CPRACTICE_HOME for isolation; this test is about the
+    # checkout fallback, so it removes the override deliberately.
+    monkeypatch.delenv("CPRACTICE_HOME", raising=False)
     settings = _settings(
         database_path=Path("data/cpractice.db"),
         problems_dir=Path("problems"),
