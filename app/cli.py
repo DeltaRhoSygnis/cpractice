@@ -16,7 +16,11 @@ import os
 import platform
 import shutil
 import socket
+import subprocess
 import sys
+import threading
+import time
+import webbrowser
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -24,7 +28,17 @@ import httpx
 
 from app.config import Settings
 from app.grading.probe import GradingProbe, probe_grading
-from app.runtime import ensure_runtime_directories
+from app.runtime import (
+    ensure_runtime_directories,
+    read_state,
+    write_state,
+)
+
+#: Hosts that are safe to bind without an explicit LAN opt-in.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+#: How long ``start`` waits for its own server before giving up on the browser.
+_STARTUP_WAIT_SECONDS = 15.0
 
 #: Shown instead of a traceback on native Windows, where the grading runner
 #: cannot import its Unix-only dependencies.
@@ -232,24 +246,158 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_problems(args: argparse.Namespace) -> int:  # pragma: no cover - Task 6
+def resolve_bind(args: argparse.Namespace, settings: Settings) -> tuple[str, int]:
+    """Resolve the bind address: CLI flags, then env, then settings, then defaults."""
+    host = args.host or os.environ.get("CPRACTICE_HOST") or settings.host or "127.0.0.1"
+    port_value = (
+        args.port
+        if args.port is not None
+        else os.environ.get("CPRACTICE_PORT") or settings.port or 8000
+    )
+    try:
+        port = int(port_value)
+    except (TypeError, ValueError):
+        port = settings.port or 8000
+    return host, port
+
+
+def open_browser(url: str) -> None:
+    """Open ``url`` in the user's browser, falling back on Termux."""
+    if is_termux():
+        termux_open = shutil.which("termux-open-url")
+        if termux_open is not None:
+            try:
+                subprocess.run([termux_open, url], check=False)
+                return
+            except OSError:
+                pass
+    webbrowser.open(url)
+
+
+def _run_server(app, host: str, port: int) -> None:
+    """Serve ``app`` in this process until interrupted."""
+    import uvicorn
+
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+def _open_when_ready(url: str) -> None:
+    """Wait for the server to answer, then open it (daemon thread target)."""
+    deadline = time.monotonic() + _STARTUP_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        if server_is_cpractice(url):
+            open_browser(url)
+            return
+        time.sleep(0.2)
+    print(f"The server did not answer at {url} within {_STARTUP_WAIT_SECONDS:.0f}s.")
+
+
+def _server_url(host: str, port: int) -> str:
+    return f"http://{host}:{port}"
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    """Start the local app, reusing an instance that already answers."""
+    if is_windows():
+        print(WINDOWS_MESSAGE)
+        return 1
+
+    settings = Settings()
+    host, port = resolve_bind(args, settings)
+
+    if host not in LOOPBACK_HOSTS and not args.allow_lan:
+        print(
+            f"Refusing to bind {host}: CPractice has no authentication.\n"
+            "Use --allow-lan only on a network you trust."
+        )
+        return 2
+
+    url = _server_url(host, port)
+    if server_is_cpractice(url):
+        print(f"CPractice is already running at {url}")
+        if not args.no_browser:
+            open_browser(url)
+        return 0
+
+    if not port_is_free(host, port):
+        print(
+            f"Port {port} on {host} is held by another service.\n"
+            "Choose another port with: cpractice start --port <n>"
+        )
+        return 1
+
+    ensure_runtime_directories(settings)
+    write_state(settings.home, host=host, port=port)
+
+    if host not in LOOPBACK_HOSTS:
+        print(
+            f"CPractice will be reachable from your local network at {url}.\n"
+            "There is no authentication: stop it when you are done."
+        )
+
+    from app.main import create_app
+
+    app = create_app(settings)
+    print(f"CPractice is starting at {url}  (Ctrl+C stops it)")
+
+    if not args.no_browser:
+        threading.Thread(
+            target=_open_when_ready, args=(url,), daemon=True
+        ).start()
+
+    _run_server(app, host, port)
+    return 0
+
+
+def cmd_open(args: argparse.Namespace) -> int:
+    """Open the running app, using the address recorded by ``start``."""
     del args
-    raise NotImplementedError("cpractice problems is implemented in the next task")
+    if is_windows():
+        print(WINDOWS_MESSAGE)
+        return 1
+
+    settings = Settings()
+    state = read_state(settings.home) or {}
+    host = str(state.get("host") or settings.host)
+    port = int(state.get("port") or settings.port)
+    url = _server_url(host, port)
+    if not server_is_cpractice(url):
+        print(
+            f"No CPractice server is running at {url}.\n"
+            "Start it with: cpractice start"
+        )
+        return 1
+    open_browser(url)
+    return 0
 
 
-def cmd_open(args: argparse.Namespace) -> int:  # pragma: no cover - Task 6
+def cmd_problems(args: argparse.Namespace) -> int:
+    """Print the locally available problems: id, title and difficulty."""
     del args
-    raise NotImplementedError("cpractice open is implemented in the next task")
+    from app.storage.problem_repository import ProblemRepository
+
+    settings = Settings()
+    ensure_runtime_directories(settings)
+    problems = ProblemRepository(settings.problems_path).load_all()
+    if not problems:
+        print(
+            f"No problems found in {settings.problems_path}.\n"
+            "Start the app once (cpractice start) to seed the examples."
+        )
+        return 0
+    for problem in problems:
+        metadata = problem.metadata
+        print(f"{metadata.id}  {metadata.title}  ({metadata.difficulty.value})")
+    return 0
 
 
-def cmd_version(args: argparse.Namespace) -> int:  # pragma: no cover - Task 6
+def cmd_version(args: argparse.Namespace) -> int:
+    """Print the version and the data folder this installation uses."""
     del args
-    raise NotImplementedError("cpractice version is implemented in the next task")
-
-
-def cmd_start(args: argparse.Namespace) -> int:  # pragma: no cover - Task 6
-    del args
-    raise NotImplementedError("cpractice start is implemented in the next task")
+    settings = Settings()
+    print(f"CPractice {settings.app_version}")
+    print(f"home: {settings.home}")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover - console script calls main()
