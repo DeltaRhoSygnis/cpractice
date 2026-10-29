@@ -458,7 +458,12 @@ views.dashboard = async () => {
         ? "Compiler missing — run cpractice doctor"
         : "Grading status unknown";
     const aiText = ai?.any_key_configured ? "AI on" : "AI offline";
-    const homeText = home ? `Data folder: ${home}` : "Data folder: unknown";
+    // Show the familiar `~` form: the full path is long, and in a screenshot or
+    // a screen-share the account name is noise the learner does not need.
+    const shortHome = home
+      ? home.replace(/^(\/home\/[^/]+|\/Users\/[^/]+)/, "~")
+      : null;
+    const homeText = shortHome ? `Data folder: ${shortHome}` : "Data folder: unknown";
 
     statusStrip.replaceChildren(
       stripItem(gradingText, grading?.ready === false ? "warn" : "ok"),
@@ -1082,23 +1087,38 @@ function renderMarkdown(text) {
 
   const lines = escaped.split("\n");
   const out = [];
-  let inCode = false;
+  let codeLines = null;   // null = not inside a fence
+  let paragraph = [];
   let inList = false;
 
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      // Soft line breaks inside one paragraph are spaces, as in Markdown.
+      out.push(`<p>${paragraph.join(" ")}</p>`);
+      paragraph = [];
+    }
+  };
   const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+  const closeBlocks = () => { flushParagraph(); closeList(); };
+  const emitCode = () => {
+    // No newline between the tags and the code: inside <pre> it would paint an
+    // empty first line above the learner's input.
+    out.push(`<pre><code>${codeLines.join("\n")}</code></pre>`);
+    codeLines = null;
+  };
 
   for (const line of lines) {
     if (line.trim().startsWith("```")) {
-      closeList();
-      out.push(inCode ? "</code></pre>" : "<pre><code>");
-      inCode = !inCode;
+      closeBlocks();
+      if (codeLines === null) codeLines = [];
+      else emitCode();
       continue;
     }
-    if (inCode) { out.push(line); continue; }
+    if (codeLines !== null) { codeLines.push(line); continue; }
 
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
-      closeList();
+      closeBlocks();
       // A statement lives inside a card whose title is an h2. Map `#`->h3 and
       // never exceed h3, so the statement can never skip a level or present a
       // heading larger than the card that contains it.
@@ -1108,16 +1128,17 @@ function renderMarkdown(text) {
     }
     const item = line.match(/^\s*[-*]\s+(.*)$/);
     if (item) {
+      flushParagraph();
       if (!inList) { out.push("<ul>"); inList = true; }
       out.push(`<li>${item[1]}</li>`);
       continue;
     }
-    if (!line.trim()) { closeList(); continue; }
+    if (!line.trim()) { closeBlocks(); continue; }
     closeList();
-    out.push(`<p>${line}</p>`);
+    paragraph.push(line.trim());
   }
-  closeList();
-  if (inCode) out.push("</code></pre>");
+  if (codeLines !== null) emitCode();
+  closeBlocks();
 
   return out.join("\n")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
