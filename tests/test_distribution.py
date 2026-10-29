@@ -286,7 +286,7 @@ def test_gate_ignores_legacy_exercise_distribution() -> None:
 def fixture_problem():
     from app.storage.problem_repository import ProblemRepository
 
-    repo = ProblemRepository(Path(__file__).resolve().parent.parent / "problems")
+    repo = ProblemRepository(Path(__file__).resolve().parent.parent / "app" / "seed_problems")
     return repo.load("pset-vote-tally")
 
 
@@ -302,7 +302,7 @@ def test_fixture_package_loads_as_problem_set(fixture_problem) -> None:
 def test_fixture_package_is_loaded_by_load_all() -> None:
     from app.storage.problem_repository import ProblemRepository
 
-    repo = ProblemRepository(Path(__file__).resolve().parent.parent / "problems")
+    repo = ProblemRepository(Path(__file__).resolve().parent.parent / "app" / "seed_problems")
     ids = [p.id for p in repo.load_all()]
 
     assert "pset-vote-tally" in ids

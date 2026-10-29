@@ -12,11 +12,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import app
 from app.config import Settings
 from app.main import create_app
 
-WEB = Path(__file__).resolve().parent.parent / "web"
-REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "problems"
+WEB = Path(app.__file__).resolve().parent / "web"
+REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "app" / "seed_problems"
 EXAMPLE_ID = "c-sum-two-integers"
 PSET_ID = "pset-vote-tally"
 

@@ -11,7 +11,7 @@ from app.config import Settings
 from app.main import create_app
 
 EXAMPLE_ID = "c-sum-two-integers"
-REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "problems"
+REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "app" / "seed_problems"
 
 
 def _client(tmp_path: Path) -> TestClient:

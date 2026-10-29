@@ -32,13 +32,14 @@ from app.storage.problem_repository import ProblemRepository
 
 # --- a calibrated problem set ----------------------------------------------
 #
-# The "vote tally" pset is a real package under ``problems/`` (plan task 2.5).
+# The "vote tally" pset is a real package under ``app/seed_problems/`` (plan
+# task 2.5).
 # Its payload is reconstructed here as the mocked provider response so the
 # generator path is exercised against content already known to pass the gate
 # (reference compiles+passes, starter compiles+does not pass, mutation
 # survives). Building it from the package keeps the two in step.
 
-_FIXTURE = Path(__file__).resolve().parent.parent / "problems" / "pset-vote-tally"
+_FIXTURE = Path(__file__).resolve().parent.parent / "app" / "seed_problems" / "pset-vote-tally"
 
 
 def _fixture_problem() -> Problem:

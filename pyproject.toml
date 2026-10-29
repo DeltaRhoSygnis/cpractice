@@ -53,10 +53,21 @@ Security = "https://github.com/DeltaRhoSygnis/cpractice/blob/master/SECURITY.md"
 [project.scripts]
 cpractice-mcp = "app.mcp.server:main"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-# The generation pipeline loads prompt templates from disk at runtime;
-# without these the wheel would import fine and fail on the first AI call.
-"app" = ["ai/prompts/*.md"]
+# Runtime assets loaded from disk: prompt templates for generation, the static
+# UI, and the hand-authored seed packages. Without these the wheel imports fine
+# and serves nothing.
+"app" = [
+  "ai/prompts/*.md",
+  "web/*",
+  "seed_problems/*/problem.json",
+  "seed_problems/*/statement.md",
+  "seed_problems/*/starter/*.c",
+  "seed_problems/*/reference/*.c",
+]

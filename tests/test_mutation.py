@@ -249,7 +249,7 @@ def test_gate_skips_mutation_when_reference_is_broken() -> None:
 
 def test_shipped_example_problem_passes_mutation_testing() -> None:
     """The example package must not be flagged as weak."""
-    repo = ProblemRepository(Path(__file__).resolve().parent.parent / "problems")
+    repo = ProblemRepository(Path(__file__).resolve().parent.parent / "app" / "seed_problems")
     problem = repo.load("c-sum-two-integers")
 
     report = QualityGate().check(problem)

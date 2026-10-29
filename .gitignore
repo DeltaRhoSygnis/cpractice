@@ -28,14 +28,12 @@ workspaces/*
 build/
 dist/
 
-# --- Generated problem packages (keep the shipped example) ---
-# AI-generated problems are ignored; the hand-authored example is tracked.
+# --- Generated problem packages ---
+# Runtime problem packages are local data; only the directory placeholder is
+# tracked. The hand-authored examples now ship inside the package at
+# app/seed_problems/ (see pyproject package-data).
 problems/*
-!problems/c-sum-two-integers/
-problems/c-sum-two-integers/quality_report.json
-# Hand-authored problem-set fixture proving the distribution-code contract (S4).
-!problems/pset-vote-tally/
-problems/pset-vote-tally/quality_report.json
+!problems/.gitkeep
 
 # --- OS / editor ---
 .DS_Store

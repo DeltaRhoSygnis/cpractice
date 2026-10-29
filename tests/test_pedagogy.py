@@ -18,7 +18,7 @@ from app.schemas.problem import Problem, ProblemMetadata
 from app.schemas.test_case import TestCase
 from app.storage.problem_repository import ProblemRepository
 
-REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "problems"
+REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "app" / "seed_problems"
 
 
 # --- difficulty profile ----------------------------------------------------

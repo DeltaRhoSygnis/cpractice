@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 
-REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "problems"
+REPO_PROBLEMS = Path(__file__).resolve().parent.parent / "app" / "seed_problems"
 EXAMPLE_ID = "c-sum-two-integers"
 
 REFERENCE = """\

@@ -20,8 +20,8 @@ EXAMPLE_ID = "c-sum-two-integers"
 
 @pytest.fixture()
 def repo() -> ProblemRepository:
-    # Uses the real example package shipped with the repository.
-    return ProblemRepository(Path(__file__).resolve().parent.parent / "problems")
+    # Uses the real example package shipped inside the app package.
+    return ProblemRepository(Path(__file__).resolve().parent.parent / "app" / "seed_problems")
 
 
 def _write_package(root: Path, problem_id: str, metadata: dict, statement: str = "# S") -> Path:

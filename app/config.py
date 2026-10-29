@@ -110,7 +110,7 @@ class Settings(BaseSettings):
 
     @property
     def web_dir(self) -> Path:
-        return ROOT_DIR / "web"
+        return Path(__file__).resolve().parent / "web"
 
     # --- AI provider resolution -------------------------------------------
     def ai_key_for(self, provider: str) -> str | None:
