@@ -147,7 +147,6 @@ const ROLE_LABEL = {
 /** "3 attempts" / "1 attempt" — never the machine-flavoured "(s)". */
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
 
-const STATUS_WORD = { ok: "OK", warn: "Warning", fail: "Failed", pending: "Pending" };
 
 /* Checker states. Like every other status in this UI, pass/fail/blocked is
    carried by icon + text + colour, never by colour alone: each row pairs a
@@ -160,14 +159,6 @@ const CHECK_CAUSE = {
   "submission not found": "nothing was submitted",
   "did not pass": "the program produced the wrong output",
 };
-
-function statusLine(state, text) {
-  return el("li", { class: `status-line status-line--${state}` }, [
-    el("span", { class: "status-icon", "aria-hidden": "true", text: STATUS_ICON[state] }),
-    el("span", { class: "visually-hidden", text: `${STATUS_WORD[state] || ""}: ` }),
-    el("span", { text }),
-  ]);
-}
 
 function loading(label = "Loading…") {
   return el("div", { class: "card" }, [
@@ -189,7 +180,7 @@ function errorCard(message, retry, status) {
     el("p", { class: "muted", text: message }),
     el("p", { class: "small muted", text: serverSide
       ? "The server had a problem, not your code. Try again in a moment."
-      : "Check the Dashboard system status if this keeps happening." }),
+      : "Check the status line on the Dashboard if this keeps happening." }),
   ];
   if (retry) {
     children.push(el("button", { class: "secondary", text: "Retry", onclick: retry }));
@@ -227,12 +218,12 @@ views.dashboard = async () => {
     el("p", { class: "subtitle", text: "AI generates and explains. Deterministic software grades." }),
   );
 
-  const statusCard = el("div", { class: "card" }, [el("h2", { text: "System status" })]);
-  const statusList = el("ul", { class: "status-list" }, [
-    statusLine("pending", "Checking backend…"),
+  // A learner needs three facts at a glance, not an infrastructure panel:
+  // can I be graded, is the AI on, and where does my work live.
+  const statusStrip = el("p", { class: "status-strip", role: "status" }, [
+    el("span", { class: "status-strip__item", text: "Checking backend…" }),
   ]);
-  statusCard.append(statusList);
-  container.append(statusCard);
+  container.append(statusStrip);
 
   const actionCard = el("div", { class: "card" }, [el("h2", { text: "Get a problem" })]);
   const topic = el("input", { type: "text", value: "loops", id: "gen-topic" });
@@ -357,7 +348,14 @@ views.dashboard = async () => {
     el("div", { class: "button-row" }, [generateBtn]),
     generateOut,
   );
-  container.append(actionCard);
+  // Generation is powerful and rarely the first step; keep it behind an
+  // explicit door instead of opening the product with a form.
+  container.append(
+    el("details", { class: "advanced" }, [
+      el("summary", { text: "Advanced: generate or import a problem" }),
+      actionCard,
+    ]),
+  );
 
   const recCard = el("div", { class: "card" }, [el("h2", { text: "Recommended next" })]);
   container.append(recCard);
@@ -441,25 +439,34 @@ views.dashboard = async () => {
   }
 
   // Data loading, independent so one failure does not blank the page.
+  // Every field is optional here on purpose: an older backend must degrade to
+  // "unknown", never throw while rendering the page.
+  const stripItem = (text, tone) =>
+    el("span", {
+      class: `status-strip__item${tone ? ` status-strip__item--${tone}` : ""}`,
+      text,
+    });
+
   api.health().then((health) => {
-    statusList.replaceChildren(
-      statusLine("ok", `Backend reachable — ${health.app} v${health.version}`),
-    );
-    const caps = health.capabilities || {};
-    const compiler = caps.compiler || {};
-    const ai = caps.ai || {};
-    statusList.append(
-      compiler.available
-        ? statusLine("ok", `C compiler available (${compiler.configured})`)
-        : statusLine("warn", `C compiler missing (${compiler.configured}) — grading unavailable`),
-    );
-    statusList.append(
-      ai.key_configured
-        ? statusLine("ok", `AI provider ready (${ai.provider} / ${ai.model})`)
-        : statusLine("warn", `AI key not set (${ai.provider}) — generation and hints limited`),
+    const grading = health?.capabilities?.grading;
+    const ai = health?.capabilities?.ai;
+    const home = health?.home;
+
+    const gradingText = grading?.ready === true
+      ? "Grading ready"
+      : grading?.ready === false
+        ? "Compiler missing — run cpractice doctor"
+        : "Grading status unknown";
+    const aiText = ai?.any_key_configured ? "AI on" : "AI offline";
+    const homeText = home ? `Data folder: ${home}` : "Data folder: unknown";
+
+    statusStrip.replaceChildren(
+      stripItem(gradingText, grading?.ready === false ? "warn" : "ok"),
+      stripItem(aiText, ai?.any_key_configured ? "ok" : ""),
+      stripItem(homeText, ""),
     );
   }).catch((error) => {
-    statusList.replaceChildren(statusLine("fail", `Backend unreachable — ${error.message}`));
+    statusStrip.replaceChildren(stripItem(`Backend unreachable — ${error.message}`, "fail"));
   });
 
   refreshRecommendations();

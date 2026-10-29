@@ -269,20 +269,35 @@ button.danger { background: transparent; color: var(--fail); border: 1px solid v
 button:disabled { opacity: .55; cursor: not-allowed; }
 .button-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
 
-/* --- status list --- */
-.status-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
-.status-line {
-  display: flex; align-items: center; gap: var(--sp-2); background: var(--surface-2);
-  border-radius: var(--r-1); padding: .45rem .6rem; font-size: .85rem;
+/* --- status strip (dashboard) ---
+   Three facts a learner needs, in one quiet row. The words carry the state;
+   the tint only reinforces it, so a colour-blind reader loses nothing. */
+.status-strip {
+  display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-5);
+  margin: 0 0 var(--sp-6); padding: .5rem .75rem;
+  border: 1px solid var(--border); border-radius: var(--r-2);
+  background: var(--surface); font-size: .8125rem; color: var(--text-dim);
 }
-.status-icon {
-  flex: 0 0 1.2em; text-align: center; line-height: 1;
-  font-family: var(--mono); font-weight: 700;
+.status-strip__item { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.status-strip__item + .status-strip__item::before {
+  content: "|"; color: var(--border-strong); font-family: var(--mono);
 }
-.status-line--ok .status-icon { color: var(--ok); }
-.status-line--warn .status-icon { color: var(--warn); }
-.status-line--fail .status-icon { color: var(--fail); }
-.status-line--pending .status-icon { color: var(--text-dim); }
+.status-strip__item--ok { color: var(--ok); }
+.status-strip__item--warn { color: var(--warn); }
+.status-strip__item--fail { color: var(--fail); }
+
+/* --- advanced door ---
+   Generation and import stay reachable, but a learner writing their first
+   program should meet a problem, not a form. */
+.advanced { margin-top: var(--sp-6); }
+.advanced > summary {
+  cursor: pointer; color: var(--text-dim); font-size: .85rem;
+  padding: .55rem 0; min-height: 44px; display: flex; align-items: center;
+  transition-property: color; transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease);
+}
+.advanced > summary:hover { color: var(--text); }
+.advanced[open] > summary { color: var(--text); }
 
 /* --- problem list --- */
 .problem-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }

@@ -381,3 +381,13 @@ def test_glass_is_limited_and_has_a_flat_backdrop() -> None:
     assert "backdrop-filter" in css
     # The body must paint a solid background behind the glass surfaces.
     assert "body {" in css and "background: var(--bg);" in css
+
+
+# --- student-first dashboard ----------------------------------------------
+
+
+def test_dashboard_exposes_advanced_disclosure_and_status(client) -> None:
+    js = client.get("/app.js").text
+    assert "Advanced" in js
+    assert "Grading ready" in js
+    assert "Data folder" in js
