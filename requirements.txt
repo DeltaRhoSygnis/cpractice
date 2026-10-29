@@ -7,6 +7,10 @@ fastapi==0.115.6
 uvicorn==0.34.0
 python-multipart==0.0.20
 
+# Pinned below 4.12: newer anyio deprecates the anyio.abc.BlockingPortal alias
+# that starlette still imports, and pytest.ini turns that warning into an error.
+anyio==4.10.0
+
 # --- Validation / config ---
 pydantic==2.10.4
 pydantic-settings==2.7.0
