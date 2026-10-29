@@ -48,6 +48,10 @@ def _isolate_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def make_settings(tmp_path: Path, **overrides) -> Settings:
     """Build isolated settings with no credentials unless explicitly given."""
     values = {
+        # Keep the writable home inside the test's temp directory, so the
+        # suite never drops runtime files (env.example, state.json) into the
+        # checkout.
+        "cpractice_home": tmp_path,
         "database_path": tmp_path / "data" / "cpractice.db",
         "problems_dir": tmp_path / "problems",
         "workspaces_dir": tmp_path / "workspaces",

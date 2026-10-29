@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import Settings, resolve_home
+from tests.conftest import make_settings
 
 
 def test_checkout_mode_resolves_to_repo_root(monkeypatch) -> None:
@@ -35,3 +36,17 @@ def test_relative_paths_resolve_under_home(monkeypatch, tmp_path) -> None:
     settings = Settings(_env_file=None)
     assert settings.database_file == tmp_path / "data" / "cpractice.db"
     assert settings.problems_path == tmp_path / "problems"
+
+
+def test_empty_override_is_treated_as_unset(monkeypatch, tmp_path) -> None:
+    """``CPRACTICE_HOME=`` must not resolve to the current directory."""
+    monkeypatch.setenv("CPRACTICE_HOME", "   ")
+    monkeypatch.setattr("app.config.is_source_checkout", lambda root=None: False)
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
+    assert resolve_home() == tmp_path / ".cpractice"
+    assert Settings(_env_file=None, cpractice_home="  ").home == tmp_path / ".cpractice"
+
+
+def test_test_settings_keep_the_home_inside_tmp_path(tmp_path) -> None:
+    """The suite must never write runtime files into the checkout."""
+    assert make_settings(tmp_path).home == tmp_path

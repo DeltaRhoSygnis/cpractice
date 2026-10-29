@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repository root: this file lives at <root>/app/config.py
@@ -43,7 +43,7 @@ def resolve_home() -> Path:
     Priority: the ``CPRACTICE_HOME`` override, then the source checkout root,
     then ``~/.cpractice`` for installed users.
     """
-    override = os.environ.get("CPRACTICE_HOME")
+    override = (os.environ.get("CPRACTICE_HOME") or "").strip()
     if override:
         return Path(override).expanduser()
     if is_source_checkout():
@@ -129,6 +129,14 @@ class Settings(BaseSettings):
     database_path: Path = Field(default=Path("data/cpractice.db"))
     problems_dir: Path = Field(default=Path("problems"))
     workspaces_dir: Path = Field(default=Path("workspaces"))
+
+    @field_validator("cpractice_home", mode="before")
+    @classmethod
+    def _blank_home_is_unset(cls, value: object) -> object:
+        """Treat a blank override as unset instead of resolving it to ``.``."""
+        if value is not None and not str(value).strip():
+            return None
+        return value
 
     # --- Derived paths (absolute) ---
     @property
